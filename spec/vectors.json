@@ -1,0 +1,117 @@
+{
+  "description": "TEMPO-RECONCILE-MEMO-001 test vectors. Any encoder/decoder must pass all of these.",
+  "positive": [
+    {
+      "name": "invoice with default salt",
+      "type": "invoice",
+      "namespace": "tempo-reconcile",
+      "issuerTag": "18193562290988123368",
+      "issuerTagHex": "fc7c8482914a04e8",
+      "ulid": "01MASW9NF6YW40J40H289H858P",
+      "saltHex": "00000000000000",
+      "memoRaw": "0x01fc7c8482914a04e801a2b3c4d5e6f708091011121314151600000000000000"
+    },
+    {
+      "name": "payroll with default salt",
+      "type": "payroll",
+      "namespace": "payroll-app",
+      "issuerTag": "5502474056306417548",
+      "issuerTagHex": "4c5cb70037f25f8c",
+      "ulid": "01MASW9NF6YW40J40H289H858P",
+      "saltHex": "00000000000000",
+      "memoRaw": "0x024c5cb70037f25f8c01a2b3c4d5e6f708091011121314151600000000000000"
+    },
+    {
+      "name": "refund with default salt",
+      "type": "refund",
+      "namespace": "my-app",
+      "issuerTag": "4186113144375442082",
+      "issuerTagHex": "3a180fb9d0177aa2",
+      "ulid": "01MASW9NF6YW40J40H289H858P",
+      "saltHex": "00000000000000",
+      "memoRaw": "0x033a180fb9d0177aa201a2b3c4d5e6f708091011121314151600000000000000"
+    },
+    {
+      "name": "batch with custom salt",
+      "type": "batch",
+      "namespace": "tempo-reconcile",
+      "issuerTag": "18193562290988123368",
+      "issuerTagHex": "fc7c8482914a04e8",
+      "ulid": "01MASW9NF6YW40J40H289H858P",
+      "saltHex": "ff010203040506",
+      "memoRaw": "0x04fc7c8482914a04e801a2b3c4d5e6f7080910111213141516ff010203040506"
+    },
+    {
+      "name": "subscription with default salt",
+      "type": "subscription",
+      "namespace": "my-app",
+      "issuerTag": "4186113144375442082",
+      "issuerTagHex": "3a180fb9d0177aa2",
+      "ulid": "01MASW9NF6YW40J40H289H858P",
+      "saltHex": "00000000000000",
+      "memoRaw": "0x053a180fb9d0177aa201a2b3c4d5e6f708091011121314151600000000000000"
+    },
+    {
+      "name": "custom type with full salt",
+      "type": "custom",
+      "namespace": "tempo-reconcile",
+      "issuerTag": "18193562290988123368",
+      "issuerTagHex": "fc7c8482914a04e8",
+      "ulid": "01MASW9NF6YW40J40H289H858P",
+      "saltHex": "aabbccddeeff00",
+      "memoRaw": "0x0ffc7c8482914a04e801a2b3c4d5e6f7080910111213141516aabbccddeeff00"
+    }
+  ],
+  "negative": [
+    {
+      "name": "all zeros (type 0x00 reserved)",
+      "memoRaw": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "reason": "type 0 is reserved"
+    },
+    {
+      "name": "type 0x0 (reserved)",
+      "memoRaw": "0x00fc7c8482914a04e801a2b3c4d5e6f708091011121314151600000000000000",
+      "reason": "type 0 is reserved"
+    },
+    {
+      "name": "type 0x7 (reserved range)",
+      "memoRaw": "0x07fc7c8482914a04e801a2b3c4d5e6f708091011121314151600000000000000",
+      "reason": "type 7 is reserved"
+    },
+    {
+      "name": "type 0x06 (reserved)",
+      "memoRaw": "0x06fc7c8482914a04e801a2b3c4d5e6f708091011121314151600000000000000",
+      "reason": "type 6 is reserved"
+    },
+    {
+      "name": "type 0x08 (reserved)",
+      "memoRaw": "0x08fc7c8482914a04e801a2b3c4d5e6f708091011121314151600000000000000",
+      "reason": "type 8 is reserved"
+    },
+    {
+      "name": "type 0x09 (reserved)",
+      "memoRaw": "0x09fc7c8482914a04e801a2b3c4d5e6f708091011121314151600000000000000",
+      "reason": "type 9 is reserved"
+    },
+    {
+      "name": "type 0x0E (reserved)",
+      "memoRaw": "0x0efc7c8482914a04e801a2b3c4d5e6f708091011121314151600000000000000",
+      "reason": "type 0x0E is reserved"
+    },
+    {
+      "name": "type 0x10 (future range, not v1)",
+      "memoRaw": "0x10fc7c8482914a04e801a2b3c4d5e6f708091011121314151600000000000000",
+      "reason": "type 0x10 not a known v1 type"
+    },
+    {
+      "name": "too short (31 bytes)",
+      "memoRaw": "0x01fc7c8482914a04e801a2b3c4d5e6f70809101112131415160000000000",
+      "reason": "not 32 bytes"
+    },
+    {
+      "name": "too long (33 bytes)",
+      "memoRaw": "0x01fc7c8482914a04e801a2b3c4d5e6f7080910111213141516000000000000000000",
+      "reason": "not 32 bytes"
+    }
+  ]
+}
