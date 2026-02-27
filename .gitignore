@@ -1,0 +1,50 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+.vscode/settings.json
+
+# test / coverage
+coverage/
+
+# turbo
+.turbo/
+
+# changeset temp
+.changeset/*.md
+!.changeset/config.json
+
+# SQLite databases (created by CLI)
+*.db
+*.db-journal
+*.db-wal
+
+# analysis data (large CSVs)
+analysis/*.csv
+analysis/.last-block
+
+# local notes
+thoughts.md
+
+# internal dev docs (not published)
+docs/
+CLAUDE.md
+
+# Claude Code local settings (NOT shared)
+.claude

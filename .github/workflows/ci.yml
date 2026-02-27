@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    defaults:
+      run:
+        working-directory: ts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+          cache-dependency-path: ts/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type Check
+        run: pnpm lint
+
+      - name: Type Check Examples
+        if: matrix.node-version == 20
+        run: pnpm exec tsc --noEmit --project tsconfig.examples.json
+
+      - name: Format Check
+        if: matrix.node-version == 20
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint:eslint
+
+      - name: Test + Coverage
+        run: pnpm test:coverage
+
+      - name: Upload coverage
+        if: matrix.node-version == 20
+        uses: codecov/codecov-action@v5
+        with:
+          directory: ts/coverage
+
+      - name: Build
+        run: pnpm build
+
+      - name: Check pack
+        run: pnpm pack --dry-run
+
+      - name: Check docs sync
+        if: matrix.node-version == 20
+        run: bash ../scripts/check-docs-sync.sh
