@@ -80,7 +80,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "@noble/hashes": "^1.7.0"
+    "@noble/hashes": "^2.0.1"
   },
   "peerDependencies": {
     "viem": "^2.0.0"
