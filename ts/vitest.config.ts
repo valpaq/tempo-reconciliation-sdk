@@ -32,6 +32,12 @@ export default defineConfig({
           functions: 90,
           lines: 90,
         },
+        "src/watcher/**/*.ts": {
+          statements: 70,
+          branches: 60,
+          functions: 75,
+          lines: 70,
+        },
       },
     },
   },

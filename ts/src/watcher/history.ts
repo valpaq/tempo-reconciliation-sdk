@@ -55,7 +55,7 @@ export async function getTip20TransferHistory(options: HistoryOptions): Promise<
       });
 
       for (const log of logs) {
-        const key = `${log.transactionHash}:${log.logIndex}`;
+        const key = `${log.transactionHash}:${log.logIndex}`.toLowerCase();
         if (!seen.has(key)) {
           seen.add(key);
           events.push(normalizeLog(log, chainId, token));
@@ -75,7 +75,7 @@ export async function getTip20TransferHistory(options: HistoryOptions): Promise<
         });
 
         for (const log of transferLogs) {
-          const key = `${log.transactionHash}:${log.logIndex}`;
+          const key = `${log.transactionHash}:${log.logIndex}`.toLowerCase();
           if (!seen.has(key)) {
             seen.add(key);
             events.push(normalizeLog(log, chainId, token));

@@ -119,6 +119,24 @@ describe("createExplorerClient", () => {
     expect(url).toContain("offset=0");
   });
 
+  it("paginates through two pages returning distinct transactions", async () => {
+    const page1 = { ...MOCK_HISTORY, transactions: [{ ...MOCK_HISTORY.transactions[0]!, hash: "0xpage1" }], offset: 0, hasMore: true };
+    const page2 = { ...MOCK_HISTORY, transactions: [{ ...MOCK_HISTORY.transactions[0]!, hash: "0xpage2" }], offset: 2, hasMore: false };
+
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify(page1), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(page2), { status: 200 }));
+
+    const client = createExplorerClient();
+    const hist1 = await client.getHistory("0x5188", { limit: 2, offset: 0 });
+    const hist2 = await client.getHistory("0x5188", { limit: 2, offset: 2 });
+
+    expect(hist1.transactions[0]!.hash).toBe("0xpage1");
+    expect(hist1.hasMore).toBe(true);
+    expect(hist2.transactions[0]!.hash).toBe("0xpage2");
+    expect(hist2.hasMore).toBe(false);
+  });
+
   it("throws on non-ok response", async () => {
     fetchSpy.mockResolvedValueOnce(new Response("Not Found", { status: 404 }));
     const client = createExplorerClient();
@@ -137,6 +155,58 @@ describe("createExplorerClient", () => {
     const client = createExplorerClient({ baseUrl: "https://custom.api/v1/" });
     await client.getMetadata("0x5188");
     expect(fetchSpy.mock.calls[0]![0]).toBe("https://custom.api/v1/address/metadata/0x5188");
+  });
+});
+
+describe("createExplorerClient (error handling)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let fetchSpy: MockInstance<any>;
+
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it("throws on 500 server error", async () => {
+    fetchSpy.mockResolvedValueOnce(new Response("Internal Server Error", { status: 500 }));
+    const client = createExplorerClient();
+    await expect(client.getMetadata("0xbad")).rejects.toThrow("Explorer API 500");
+  });
+
+  it("throws on 429 rate limit", async () => {
+    fetchSpy.mockResolvedValueOnce(new Response("Too Many Requests", { status: 429 }));
+    const client = createExplorerClient();
+    await expect(client.getBalances("0xbad")).rejects.toThrow("Explorer API 429");
+  });
+
+  it("throws on 403 forbidden", async () => {
+    fetchSpy.mockResolvedValueOnce(new Response("Forbidden", { status: 403 }));
+    const client = createExplorerClient();
+    await expect(client.getHistory("0xbad")).rejects.toThrow("Explorer API 403");
+  });
+
+  it("propagates network errors from fetch", async () => {
+    fetchSpy.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const client = createExplorerClient();
+    await expect(client.getMetadata("0xbad")).rejects.toThrow("Failed to fetch");
+  });
+
+  it("uses custom fetch function from options", async () => {
+    const customFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(MOCK_METADATA), { status: 200 }),
+    );
+    const client = createExplorerClient({ fetch: customFetch });
+    await client.getMetadata("0x5188");
+    expect(customFetch).toHaveBeenCalledOnce();
+  });
+
+  it("error message includes the path", async () => {
+    fetchSpy.mockResolvedValueOnce(new Response("Not Found", { status: 404 }));
+    const client = createExplorerClient();
+    await expect(client.getMetadata("0xbeef")).rejects.toThrow("/address/metadata/0xbeef");
   });
 });
 

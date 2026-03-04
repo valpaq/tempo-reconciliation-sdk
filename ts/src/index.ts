@@ -40,6 +40,6 @@ export { InMemoryStore } from "./reconciler/store";
 
 export { exportCsv } from "./export/csv";
 export { exportJson, exportJsonl } from "./export/json";
-export { sendWebhook } from "./export/webhook";
+export { sendWebhook, sign } from "./export/webhook";
 
 export { ExplorerClient, createExplorerClient } from "./explorer/client";

@@ -60,6 +60,26 @@
       "ulid": "01MASW9NF6YW40J40H289H858P",
       "saltHex": "aabbccddeeff00",
       "memoRaw": "0x0ffc7c8482914a04e801a2b3c4d5e6f7080910111213141516aabbccddeeff00"
+    },
+    {
+      "name": "invoice with min ULID (all zeros)",
+      "type": "invoice",
+      "namespace": "my-app",
+      "issuerTag": "4186113144375442082",
+      "issuerTagHex": "3a180fb9d0177aa2",
+      "ulid": "00000000000000000000000000",
+      "saltHex": "00000000000000",
+      "memoRaw": "0x013a180fb9d0177aa20000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "invoice with max ULID (all Zs)",
+      "type": "invoice",
+      "namespace": "tempo-reconcile",
+      "issuerTag": "18193562290988123368",
+      "issuerTagHex": "fc7c8482914a04e8",
+      "ulid": "7ZZZZZZZZZZZZZZZZZZZZZZZZZ",
+      "saltHex": "00000000000000",
+      "memoRaw": "0x01fc7c8482914a04e8ffffffffffffffffffffffffffffffff00000000000000"
     }
   ],
   "negative": [

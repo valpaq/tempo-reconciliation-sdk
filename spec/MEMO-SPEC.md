@@ -2,7 +2,7 @@
 
 ## Memo standard for TIP-20 payment reconciliation
 
-**Status:** Draft v1
+**Status:** Stable v1
 **Created:** 2026-02-27
 **Authors:** tempo-reconcile contributors
 **License:** CC0-1.0 (public domain dedication)
@@ -225,7 +225,7 @@ ulid      = bytes_to_ulid(id16)
 salt      = memo[25..31]
 ```
 
-Reference implementations: [github.com/valpaq/tempo-reconciliation-sdk](https://github.com/valpaq/tempo-reconciliation-sdk) (TypeScript, Rust planned)
+Reference implementations: [github.com/valpaq/tempo-reconciliation-sdk](https://github.com/valpaq/tempo-reconciliation-sdk) (TypeScript, Rust)
 
 ---
 
@@ -298,7 +298,7 @@ This mapping is informational. MEMO-001 is not a subset of ISO 20022 -- it is a 
 
 | Standard | Chain | Memo size | On-chain data | Status |
 |----------|-------|-----------|---------------|--------|
-| TEMPO-RECONCILE-MEMO-001 (this) | Tempo | bytes32 fixed | Reference only | Draft |
+| TEMPO-RECONCILE-MEMO-001 (this) | Tempo | bytes32 fixed | Reference only | Stable |
 | ERC-7699 | Ethereum | bytes (variable) | Flexible | Draft EIP |
 | Stellar memo | Stellar | 28 bytes or 32-byte hash | Text or hash | Production |
 | XRPL memos | XRP Ledger | Variable | Structured JSON | Production |

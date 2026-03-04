@@ -11,15 +11,16 @@ export class InMemoryStore implements ReconcileStore {
 
   /** @throws If a payment with the same `memoRaw` is already registered */
   addExpected(payment: ExpectedPayment): void {
-    if (this.expected.has(payment.memoRaw)) {
+    const key = payment.memoRaw.toLowerCase();
+    if (this.expected.has(key)) {
       throw new Error(`Expected payment already registered: ${payment.memoRaw}`);
     }
-    this.expected.set(payment.memoRaw, payment);
+    this.expected.set(key, payment);
   }
 
   /** Look up an expected payment by its memo bytes. */
   getExpected(memoRaw: `0x${string}`): ExpectedPayment | undefined {
-    return this.expected.get(memoRaw);
+    return this.expected.get(memoRaw.toLowerCase());
   }
 
   /** Return all pending (unmatched) expected payments. */
@@ -29,17 +30,17 @@ export class InMemoryStore implements ReconcileStore {
 
   /** Remove an expected payment. Returns `true` if it existed. */
   removeExpected(memoRaw: `0x${string}`): boolean {
-    return this.expected.delete(memoRaw);
+    return this.expected.delete(memoRaw.toLowerCase());
   }
 
   /** Store a match result keyed by `"txHash:logIndex"`. */
   addResult(key: string, result: MatchResult): void {
-    this.results.set(key, result);
+    this.results.set(key.toLowerCase(), result);
   }
 
   /** Look up a cached match result by event key. */
   getResult(key: string): MatchResult | undefined {
-    return this.results.get(key);
+    return this.results.get(key.toLowerCase());
   }
 
   /** Return all stored match results. */
@@ -49,20 +50,21 @@ export class InMemoryStore implements ReconcileStore {
 
   /** Accumulate a partial payment amount and return the new cumulative total. */
   addPartial(memoRaw: `0x${string}`, amount: bigint): bigint {
-    const current = this.partials.get(memoRaw) ?? 0n;
+    const k = memoRaw.toLowerCase();
+    const current = this.partials.get(k) ?? 0n;
     const total = current + amount;
-    this.partials.set(memoRaw, total);
+    this.partials.set(k, total);
     return total;
   }
 
   /** Get the cumulative partial payment total for a memo. Returns `0n` if none. */
   getPartialTotal(memoRaw: `0x${string}`): bigint {
-    return this.partials.get(memoRaw) ?? 0n;
+    return this.partials.get(memoRaw.toLowerCase()) ?? 0n;
   }
 
   /** Remove the partial accumulation entry for a memo (cleanup after match). */
   removePartial(memoRaw: `0x${string}`): void {
-    this.partials.delete(memoRaw);
+    this.partials.delete(memoRaw.toLowerCase());
   }
 
   /** Clear all expected payments, results, and partial totals. */

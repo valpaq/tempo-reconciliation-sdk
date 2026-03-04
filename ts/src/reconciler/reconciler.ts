@@ -318,6 +318,7 @@ export class Reconciler {
    * @returns `true` if the payment was found and removed, `false` if not found
    */
   removeExpected(memoRaw: `0x${string}`): boolean {
+    this.store.removePartial(memoRaw);
     return this.store.removeExpected(memoRaw);
   }
 

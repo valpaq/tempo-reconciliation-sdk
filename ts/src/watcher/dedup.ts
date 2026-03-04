@@ -13,7 +13,7 @@ export class DedupCache {
   }
 
   has(txHash: string, logIndex: number): boolean {
-    const key = `${txHash}:${logIndex}`;
+    const key = `${txHash.toLowerCase()}:${logIndex}`;
     const ts = this.cache.get(key);
     if (ts === undefined) return false;
     if (Date.now() - ts > this.ttlMs) {
@@ -24,7 +24,7 @@ export class DedupCache {
   }
 
   add(txHash: string, logIndex: number): void {
-    const key = `${txHash}:${logIndex}`;
+    const key = `${txHash.toLowerCase()}:${logIndex}`;
     this.cache.set(key, Date.now());
     this.evict();
   }

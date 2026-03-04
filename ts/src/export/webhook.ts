@@ -1,7 +1,8 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { createHmac } from "node:crypto";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 import type { MatchResult, WebhookBatchError, WebhookOptions, WebhookResult } from "../types";
 
-function sign(payload: string, secret: string): string {
+export function sign(payload: string, secret: string): string {
   return createHmac("sha256", secret).update(payload).digest("hex");
 }
 
@@ -79,7 +80,14 @@ async function sendBatch(
   fetchFn: typeof globalThis.fetch,
 ): Promise<BatchOutcome> {
   const timestamp = Math.floor(Date.now() / 1000);
-  const idempotencyKey = randomUUID();
+  // Stable key derived from batch content — same across retries and process restarts.
+  const batchFingerprint = events
+    .map((e) => `${e.payment.txHash}:${e.payment.logIndex}`)
+    .join("|");
+  const idempotencyKey = Array.from(
+    keccak_256(new TextEncoder().encode(batchFingerprint)),
+    (b) => b.toString(16).padStart(2, "0"),
+  ).join("");
 
   const body = JSON.stringify({
     id: `whevt_${idempotencyKey}`,

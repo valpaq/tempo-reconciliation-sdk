@@ -190,8 +190,8 @@ export type AddressMetadata = {
   txCount: number;
   lastActivityTimestamp: number;
   createdTimestamp: number;
-  createdTxHash: `0x${string}`;
-  createdBy: `0x${string}`;
+  createdTxHash?: `0x${string}`;
+  createdBy?: `0x${string}`;
 };
 
 export type TokenBalance = {
