@@ -81,12 +81,9 @@ async function sendBatch(
 ): Promise<BatchOutcome> {
   const timestamp = Math.floor(Date.now() / 1000);
   // Stable key derived from batch content — same across retries and process restarts.
-  const batchFingerprint = events
-    .map((e) => `${e.payment.txHash}:${e.payment.logIndex}`)
-    .join("|");
-  const idempotencyKey = Array.from(
-    keccak_256(new TextEncoder().encode(batchFingerprint)),
-    (b) => b.toString(16).padStart(2, "0"),
+  const batchFingerprint = events.map((e) => `${e.payment.txHash}:${e.payment.logIndex}`).join("|");
+  const idempotencyKey = Array.from(keccak_256(new TextEncoder().encode(batchFingerprint)), (b) =>
+    b.toString(16).padStart(2, "0"),
   ).join("");
 
   const body = JSON.stringify({

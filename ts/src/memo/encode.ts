@@ -22,7 +22,7 @@ import { ulidToBytes16 } from "./ulid";
  */
 export function randomSalt(): Uint8Array {
   const buf = new Uint8Array(SALT_SIZE);
-  crypto.getRandomValues(buf);
+  globalThis.crypto.getRandomValues(buf);
   return buf;
 }
 

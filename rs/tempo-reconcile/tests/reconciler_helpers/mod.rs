@@ -3,7 +3,9 @@ use tempo_reconcile::{encode_memo_v1, EncodeMemoV1Params, ExpectedPayment, Payme
 pub use tempo_reconcile::issuer_tag_from_namespace;
 pub use tempo_reconcile::MemoType;
 
+#[allow(dead_code)]
 pub const ULID_A: &str = "01MASW9NF6YW40J40H289H858P";
+#[allow(dead_code)]
 pub const ULID_B: &str = "01MASW9NF6YW40J40H289H8580";
 
 pub fn make_memo(memo_type: MemoType, ulid: &str) -> String {

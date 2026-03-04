@@ -2,7 +2,7 @@
 name = "tempo-reconcile"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.84"
 license = "MIT"
 description = "Reconciliation SDK for TIP-20 payments on Tempo"
 keywords = ["tempo", "blockchain", "payment", "reconciliation", "tip20"]

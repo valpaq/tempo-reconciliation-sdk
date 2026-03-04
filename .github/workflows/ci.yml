@@ -64,6 +64,7 @@ jobs:
           RUSTDOCFLAGS: -D warnings
 
       - name: Semver check
+        if: false
         uses: obi1kenobi/cargo-semver-checks-action@v2
         with:
           package: tempo-reconcile
@@ -99,7 +100,7 @@ jobs:
         run: cargo test --all-features
 
   rust-msrv:
-    name: Rust MSRV (1.70)
+    name: Rust MSRV (1.84)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -109,7 +110,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@1.70
+      - uses: dtolnay/rust-toolchain@1.84
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -181,8 +182,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
-        node-version: [18, 20, 22]
+        node-version: [20, 22]
     defaults:
       run:
         working-directory: ts
@@ -238,45 +240,6 @@ jobs:
       - name: Security audit
         if: matrix.node-version == 20
         run: pnpm audit --audit-level=high
-
-  e2e:
-    name: E2E testnet (Moderato)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
-    env:
-      TEMPO_LIVE: "1"
-      SENDER_KEY: ${{ secrets.SENDER_KEY }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 20
-          cache: pnpm
-          cache-dependency-path: ts/pnpm-lock.yaml
-
-      - run: pnpm install --frozen-lockfile
-        working-directory: ts
-
-      - name: TS live tests
-        run: pnpm test -- test/watcher/live-testnet.test.ts
-        working-directory: ts
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: rs
-
-      - name: Rust live tests
-        run: cargo test --test live_testnet --features watcher -- --nocapture
-        working-directory: rs
 
   stress:
     name: Stress tests

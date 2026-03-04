@@ -120,8 +120,18 @@ describe("createExplorerClient", () => {
   });
 
   it("paginates through two pages returning distinct transactions", async () => {
-    const page1 = { ...MOCK_HISTORY, transactions: [{ ...MOCK_HISTORY.transactions[0]!, hash: "0xpage1" }], offset: 0, hasMore: true };
-    const page2 = { ...MOCK_HISTORY, transactions: [{ ...MOCK_HISTORY.transactions[0]!, hash: "0xpage2" }], offset: 2, hasMore: false };
+    const page1 = {
+      ...MOCK_HISTORY,
+      transactions: [{ ...MOCK_HISTORY.transactions[0]!, hash: "0xpage1" }],
+      offset: 0,
+      hasMore: true,
+    };
+    const page2 = {
+      ...MOCK_HISTORY,
+      transactions: [{ ...MOCK_HISTORY.transactions[0]!, hash: "0xpage2" }],
+      offset: 2,
+      hasMore: false,
+    };
 
     fetchSpy
       .mockResolvedValueOnce(new Response(JSON.stringify(page1), { status: 200 }))
@@ -195,9 +205,9 @@ describe("createExplorerClient (error handling)", () => {
   });
 
   it("uses custom fetch function from options", async () => {
-    const customFetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(MOCK_METADATA), { status: 200 }),
-    );
+    const customFetch = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(MOCK_METADATA), { status: 200 }));
     const client = createExplorerClient({ fetch: customFetch });
     await client.getMetadata("0x5188");
     expect(customFetch).toHaveBeenCalledOnce();
