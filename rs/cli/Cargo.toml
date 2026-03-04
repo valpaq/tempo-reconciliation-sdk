@@ -1,0 +1,25 @@
+[package]
+name = "tempo-reconcile-cli"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+license = "MIT"
+description = "Command-line tool for TIP-20 payment reconciliation on Tempo"
+
+[[bin]]
+name = "tempo-reconcile"
+path = "src/main.rs"
+
+[dependencies]
+tempo-reconcile = { path = "../tempo-reconcile", features = ["rand", "serde", "export", "watcher"] }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+csv = "1"
+hex = "0.4"
+ulid = "1"
+
+[dev-dependencies]
+tempfile = "3"

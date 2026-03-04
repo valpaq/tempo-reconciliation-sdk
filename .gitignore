@@ -48,3 +48,7 @@ CLAUDE.md
 
 # Claude Code local settings (NOT shared)
 .claude
+
+# Rust
+target/
+Cargo.lock

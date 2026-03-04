@@ -142,17 +142,96 @@ const json = exportJson(report.matched)
 | `unknown_memo` | Memo present but not in expected payments |
 | `no_memo` | Transfer without memo |
 | `expired` | Expected payment was past due |
+| `partial` | Partial payment accumulated, not yet complete |
 
 Duplicate events are handled via idempotency: ingesting the same `(txHash, logIndex)` twice returns the cached result silently.
 
 Register expectations before ingesting events. If a payment arrives before its `expect()` call, it gets `unknown_memo` and the result is cached — re-ingesting won't re-evaluate. To reprocess, clear the store with `reconciler.reset()`.
+
+## Rust quick start
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+tempo-reconcile = { version = "0.1", features = ["serde", "export", "watcher"] }
+```
+
+### Encode a memo
+
+```rust
+use tempo_reconcile::{encode_memo_v1, issuer_tag_from_namespace, EncodeMemoV1Params, MemoType};
+
+let issuer = issuer_tag_from_namespace("my-app");
+let memo_raw = encode_memo_v1(&EncodeMemoV1Params {
+    memo_type: MemoType::Invoice,
+    issuer_tag: issuer,
+    ulid: "01MASW9NF6YW40J40H289H858P".to_string(),
+    salt: None,
+}).unwrap();
+// memo_raw = "0x01..." (bytes32 hex)
+```
+
+### Reconcile
+
+```rust
+use tempo_reconcile::{Reconciler, ReconcilerOptions, ExpectedPayment, PaymentEvent, MatchStatus};
+
+let mut rec = Reconciler::new(ReconcilerOptions::new());
+rec.expect(ExpectedPayment {
+    memo_raw: memo_raw.clone(),
+    token: "0x20C0000000000000000000000000000000000000".into(),
+    to: "0xYourAddress".into(),
+    amount: 10_000_000, // 10 USDC (6 decimals)
+    from: None, due_at: None, meta: None,
+}).unwrap();
+
+let result = rec.ingest(PaymentEvent {
+    memo_raw: Some(memo_raw), amount: 10_000_000,
+    token: "0x20C0000000000000000000000000000000000000".into(),
+    to: "0xYourAddress".into(), from: "0xSender".into(),
+    chain_id: 42431, block_number: 1, log_index: 0,
+    tx_hash: "0xabc".into(), memo: None, timestamp: None,
+});
+assert_eq!(result.status, MatchStatus::Matched);
+```
+
+### Export
+
+```rust
+use tempo_reconcile::{export_csv, export_json};
+
+let report = rec.report();
+let csv = export_csv(&report.matched);
+let json = export_json(&report.matched);
+```
+
+See the [Rust API reference](API.md#rust-api-reference) for full documentation and feature flags.
+
+## Error handling
+
+**Memo functions** return `null` (TypeScript) or `None` (Rust) for invalid input.
+They never throw.
+
+**Reconciler** `expect()` throws if the same memo is registered twice.
+`ingest()` always returns a `MatchResult` — it never throws.
+
+**Watcher (HTTP polling)** throws on startup if the RPC URL is unreachable.
+After starting, transient RPC errors are skipped and the poller retries on the
+next cycle. 429 responses respect the `Retry-After` header automatically.
+
+**Watcher (WebSocket)** reconnects automatically after disconnections, up to
+`maxReconnects` times (default 5; set to 0 to disable reconnection). After
+exhausting retries the watcher stops silently — check your handle if uptime matters.
+
+**Export** functions are pure transforms. They do not throw.
 
 ## Networks
 
 | Network | Chain ID | RPC | Status |
 |---------|----------|-----|--------|
 | Moderato testnet | 42431 | `https://rpc.moderato.tempo.xyz` | Active |
-| Mainnet | 4217 | TBD | Coming 2026 |
+| Mainnet | 4217 | TBD | Pending launch |
 
 Tempo Moderato is natively supported in viem. Instead of hardcoding chain IDs:
 

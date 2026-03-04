@@ -8,10 +8,11 @@ Drop-in reconciliation for TIP-20 payments on Tempo: structured bytes32 memos + 
 
 ---
 
-TIP-20 tokens on Tempo have a native `bytes32` memo field (`transferWithMemo`). This SDK gives you everything on the **receiving side**: watch for payments, decode memos (structured v1 or plain-text), match them to invoices, and export results.
+TIP-20 tokens on Tempo have a native `bytes32` memo field (`transferWithMemo`). This SDK covers the receiving side: watch for payments, decode memos (structured v1 or plain-text), match them to invoices, and export results.
 
-- **`TEMPO-RECONCILE-MEMO-001`** -- namespaced bytes32 memo layout. No PII on-chain.
-- **`@tempo-reconcile/sdk`** -- TypeScript SDK: memo codec, payment watcher, reconciler, exporters
+- `TEMPO-RECONCILE-MEMO-001` -- namespaced bytes32 memo layout. No PII on-chain.
+- `@tempo-reconcile/sdk` -- TypeScript SDK: memo codec, payment watcher, reconciler, exporters
+- `tempo-reconcile` -- Rust crate: same spec + test vectors, idiomatic Rust API
 
 Does not overlap with the official Tempo SDK (no wallet, no signing, no sponsored TX).
 
@@ -21,10 +22,17 @@ Node.js >= 18.0.0 (for native `fetch`). The `sendWebhook` and `createExplorerCli
 
 ## Install
 
+**TypeScript / Node.js**
 ```bash
 npm i @tempo-reconcile/sdk
 # or
 pnpm add @tempo-reconcile/sdk
+```
+
+**Rust**
+```toml
+[dependencies]
+tempo-reconcile = "0.1"
 ```
 
 ## Quick start
@@ -98,6 +106,46 @@ console.log(exportCsv([...matched, ...issues]))
 
 Register expectations before ingesting events. If a payment arrives before its `expect()` call, it gets `unknown_memo` and the result is cached — re-ingesting won't re-evaluate. To reprocess, clear the store with `reconciler.reset()`.
 
+## Rust
+
+```toml
+[dependencies]
+tempo-reconcile = "0.1"
+```
+
+```rust
+use tempo_reconcile::{
+    encode_memo_v1, issuer_tag_from_namespace, EncodeMemoV1Params,
+    ExpectedPayment, MatchStatus, MemoType, PaymentEvent, Reconciler, ReconcilerOptions,
+};
+
+let memo_raw = encode_memo_v1(&EncodeMemoV1Params {
+    memo_type: MemoType::Invoice,
+    issuer_tag: issuer_tag_from_namespace("my-company"),
+    ulid: "01MASW9NF6YW40J40H289H858P".to_string(),
+    salt: None,
+}).unwrap();
+
+let mut rec = Reconciler::new(ReconcilerOptions::new());
+rec.expect(ExpectedPayment {
+    memo_raw: memo_raw.clone(),
+    token: "0x20C0000000000000000000000000000000000000".to_string(),
+    to: "0xMyAddress".to_string(), amount: 10_000_000, // 10 USDC (6 decimals)
+    from: None, due_at: None, meta: None,
+}).unwrap();
+
+let result = rec.ingest(PaymentEvent {
+    memo_raw: Some(memo_raw), amount: 10_000_000,
+    token: "0x20C0000000000000000000000000000000000000".to_string(),
+    to: "0xMyAddress".to_string(), from: "0xSender".to_string(),
+    chain_id: 42431, block_number: 1, log_index: 0,
+    tx_hash: "0xabc".to_string(), memo: None, timestamp: None,
+});
+assert_eq!(result.status, MatchStatus::Matched);
+```
+
+For watcher and exporter: [rs/tempo-reconcile/](rs/tempo-reconcile/)
+
 ## Memo layout (TEMPO-RECONCILE-MEMO-001)
 
 ```
@@ -142,9 +190,12 @@ Testnet tokens: pathUSD (`0x20C0...0000`), AlphaUSD (`...0001`), BetaUSD (`...00
 
 ## Documentation
 
+- [Getting started](docs-public/GETTING-STARTED.md) -- 5-step tutorial from install to export
 - [API reference](docs-public/API.md) -- all exported functions, types, and options
+- [Examples & walkthroughs](docs-public/EXAMPLES.md) -- module-by-module usage with both TS and Rust
 - [Memo spec](docs-public/MEMO-SPEC.md) -- TEMPO-RECONCILE-MEMO-001 bytes32 layout
-- [Examples](ts/examples/) -- 15 numbered examples + showcase, covering every module
+- [CLI reference](docs-public/CLI.md) -- `tempo-reconcile` command-line tool (Rust)
+- [TS examples](ts/examples/) -- 15 numbered examples + showcase, covering every module
 
 ## Contributing
 

@@ -208,6 +208,33 @@ describe("Reconciler", () => {
     expect(r.removeExpected(exp.memoRaw)).toBe(false);
   });
 
+  it("removeExpected cleans up partial accumulation", () => {
+    const memo = makeMemo();
+    const r = new Reconciler({ allowPartial: true });
+    r.expect(makeExpected({ memoRaw: memo, amount: 10_000_000n }));
+
+    // Ingest partial payment
+    const p1 = r.ingest(makeEvent({ memoRaw: memo, amount: 3_000_000n }));
+    expect(p1.status).toBe("partial");
+    expect(p1.remainingAmount).toBe(7_000_000n);
+
+    // Remove and re-register
+    r.removeExpected(memo);
+    r.expect(makeExpected({ memoRaw: memo, amount: 10_000_000n }));
+
+    // New partial should start from scratch, not include old 3M
+    const p2 = r.ingest(
+      makeEvent({
+        memoRaw: memo,
+        amount: 4_000_000n,
+        txHash: "0x2222000000000000000000000000000000000000000000000000000000000002",
+        logIndex: 0,
+      }),
+    );
+    expect(p2.status).toBe("partial");
+    expect(p2.remainingAmount).toBe(6_000_000n); // 10M - 4M, not 10M - 7M
+  });
+
   it("ingestMany processes all events", () => {
     const r = new Reconciler();
     r.expect(makeExpected());
@@ -368,6 +395,38 @@ describe("Reconciler: partial payments", () => {
     const result = r.ingest(makeEvent({ amount: 10_000_000n }));
     expect(result.status).toBe("matched");
   });
+
+  it("partial state preserved after wrong token payment", () => {
+    const memo = makeMemo();
+    const r = new Reconciler({ allowPartial: true });
+    r.expect(makeExpected({ memoRaw: memo, amount: 10_000_000n }));
+
+    // First partial: 4M correct
+    const r1 = r.ingest(makeEvent({ memoRaw: memo, amount: 4_000_000n }));
+    expect(r1.status).toBe("partial");
+    expect(r1.remainingAmount).toBe(6_000_000n);
+
+    // Second: wrong token → mismatch_token
+    const r2 = r.ingest(
+      makeEvent({
+        memoRaw: memo,
+        amount: 6_000_000n,
+        token: "0x9999999999999999999999999999999999999999" as const,
+        txHash: "0xbbbb000000000000000000000000000000000000000000000000000000000002",
+      }),
+    );
+    expect(r2.status).toBe("mismatch_token");
+
+    // Third: correct token, 6M → completes match (partial 4M preserved)
+    const r3 = r.ingest(
+      makeEvent({
+        memoRaw: memo,
+        amount: 6_000_000n,
+        txHash: "0xcccc000000000000000000000000000000000000000000000000000000000003",
+      }),
+    );
+    expect(r3.status).toBe("matched");
+  });
 });
 
 describe("Reconciler: partialToleranceMode", () => {
@@ -525,5 +584,113 @@ describe("Reconciler: double-match prevention", () => {
     const result = r.ingest(makeEvent({ memoRaw: memo, amount: large }));
     expect(result.status).toBe("matched");
     expect(result.overpaidBy).toBeUndefined();
+  });
+});
+
+describe("Reconciler: expiry + partial interactions", () => {
+  it("rejects expired partial when rejectExpired=true", () => {
+    const memo = makeMemo();
+    const r = new Reconciler({ allowPartial: true, rejectExpired: true });
+    r.expect(makeExpected({ memoRaw: memo, amount: 10_000_000n, dueAt: 1000 }));
+
+    const result = r.ingest(makeEvent({ memoRaw: memo, amount: 4_000_000n, timestamp: 2000 }));
+    expect(result.status).toBe("expired");
+    expect(result.isLate).toBe(true);
+  });
+
+  it("accumulates late partial when rejectExpired=false", () => {
+    const memo = makeMemo();
+    const r = new Reconciler({ allowPartial: true, rejectExpired: false });
+    r.expect(makeExpected({ memoRaw: memo, amount: 10_000_000n, dueAt: 1000 }));
+
+    const r1 = r.ingest(makeEvent({ memoRaw: memo, amount: 4_000_000n, timestamp: 2000 }));
+    expect(r1.status).toBe("partial");
+    expect(r1.isLate).toBe(true);
+    expect(r1.remainingAmount).toBe(6_000_000n);
+  });
+
+  it("matches via partials with isLate flag when payment is late", () => {
+    const memo = makeMemo();
+    const r = new Reconciler({ allowPartial: true, rejectExpired: false });
+    r.expect(makeExpected({ memoRaw: memo, amount: 10_000_000n, dueAt: 1000 }));
+
+    r.ingest(makeEvent({ memoRaw: memo, amount: 6_000_000n, timestamp: 500 }));
+    const r2 = r.ingest(
+      makeEvent({
+        memoRaw: memo,
+        amount: 4_000_000n,
+        timestamp: 2000,
+        txHash: "0xbbbb000000000000000000000000000000000000000000000000000000000002",
+      }),
+    );
+    expect(r2.status).toBe("matched");
+    expect(r2.isLate).toBe(true);
+  });
+
+  it("expired check runs before amount check", () => {
+    const memo = makeMemo();
+    const r = new Reconciler({ rejectExpired: true });
+    r.expect(makeExpected({ memoRaw: memo, amount: 10_000_000n, dueAt: 1000 }));
+
+    // Both expired AND wrong amount — expiry should take priority
+    const result = r.ingest(makeEvent({ memoRaw: memo, amount: 5_000_000n, timestamp: 2000 }));
+    expect(result.status).toBe("expired");
+  });
+});
+
+describe("Reconciler: tolerance boundary conditions", () => {
+  it("tolerance exact boundary matches", () => {
+    const r = new Reconciler({ amountToleranceBps: 100 }); // 1%
+    r.expect(makeExpected({ amount: 10_000_000n }));
+    // 1% of 10M = 100K. Pay exactly 9.9M = boundary → matched
+    const result = r.ingest(makeEvent({ amount: 9_900_000n }));
+    expect(result.status).toBe("matched");
+  });
+
+  it("tolerance one below boundary fails", () => {
+    const r = new Reconciler({ amountToleranceBps: 100 }); // 1%
+    r.expect(makeExpected({ amount: 10_000_000n }));
+    // Pay 9_899_999 → 1 below the 9.9M threshold → mismatch
+    const result = r.ingest(makeEvent({ amount: 9_899_999n }));
+    expect(result.status).toBe("mismatch_amount");
+  });
+
+  it("tolerance with overpay still matches", () => {
+    const r = new Reconciler({ amountToleranceBps: 100 }); // 1%
+    r.expect(makeExpected({ amount: 10_000_000n }));
+    // 12M overpay with tolerance → still matched
+    const result = r.ingest(makeEvent({ amount: 12_000_000n }));
+    expect(result.status).toBe("matched");
+    expect(result.overpaidBy).toBe(2_000_000n);
+  });
+
+  it("100% tolerance allows zero payment", () => {
+    const r = new Reconciler({ amountToleranceBps: 10000 }); // 100%
+    r.expect(makeExpected({ amount: 10_000_000n }));
+    const result = r.ingest(makeEvent({ amount: 0n }));
+    expect(result.status).toBe("matched");
+  });
+
+  it("tolerance + allowPartial final mode: cumulative threshold includes tolerance", () => {
+    const memo = makeMemo();
+    const r = new Reconciler({
+      allowPartial: true,
+      amountToleranceBps: 500, // 5%
+      partialToleranceMode: "final",
+    });
+    r.expect(makeExpected({ memoRaw: memo, amount: 10_000_000n }));
+
+    // 5% of 10M = 500K. Threshold = 10M - 500K = 9.5M
+    // First partial: 5M
+    r.ingest(makeEvent({ memoRaw: memo, amount: 5_000_000n }));
+    // Second partial: 4.5M → cumulative = 9.5M >= 9.5M threshold → matched
+    const r2 = r.ingest(
+      makeEvent({
+        memoRaw: memo,
+        amount: 4_500_000n,
+        txHash: "0xbbbb000000000000000000000000000000000000000000000000000000000002",
+      }),
+    );
+    expect(r2.status).toBe("matched");
   });
 });

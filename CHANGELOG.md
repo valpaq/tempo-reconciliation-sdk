@@ -35,3 +35,15 @@ Initial release.
 ### Explorer
 
 - `createExplorerClient` — Tempo Explorer REST API (metadata, balances, history)
+
+### Rust crate (`tempo-reconcile`)
+
+- Full API parity with the TypeScript SDK
+- `encode_memo_v1` / `decode_memo_v1` / `decode_memo` — bytes32 memo encode/decode
+- `Reconciler` with all 8 `MatchStatus` variants, partial payments, tolerance, expiry
+- `export_csv` / `export_json` / `export_jsonl` — formatted output (feature `export`)
+- `send_webhook` — HMAC-signed HTTP delivery with jitter backoff (feature `webhook`)
+- `watch_tip20_transfers` — HTTP polling watcher (feature `watcher`)
+- `watch_tip20_transfers_ws` — WebSocket watcher (feature `watcher-ws`)
+- `ExplorerClient` — Tempo Explorer HTTP client (feature `explorer`)
+- CLI binary `tempo-reconcile` — `memo encode/decode/generate/issuer-tag`, `run`

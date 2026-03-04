@@ -179,11 +179,13 @@ const stop = watchTip20TransfersWs(
 | `maxReconnects` | `number` | no | 5 | Max reconnection attempts after WebSocket drops. 0 = no reconnect |
 | `reconnectDelayMs` | `number` | no | 1000 | Base delay (ms) before first reconnect. Doubles each attempt, capped at 30s |
 
-**Reconnection:** If the WebSocket connection drops, the watcher automatically reconnects with exponential backoff (1s, 2s, 4s, ... capped at 30s). Set `maxReconnects: 0` to disable. The `onError` callback fires on each failed attempt.
+Reconnection: If the WebSocket connection drops, the watcher reconnects with exponential backoff (1s, 2s, 4s... capped at 30s). Set `maxReconnects: 0` to disable. `onError` fires on each failed attempt.
 
-**Note on reorgs:** Tempo has deterministic ~0.5s finality. There are no reorgs, so the watcher does not implement reorg handling. If you use this SDK on a chain with reorgs, you need to handle that yourself.
+**Rust SDK callback difference:** The Rust watcher uses a batch callback `Fn(Vec<PaymentEvent>)` instead of per-event `Fn(PaymentEvent)`. This is idiomatic for Rust and avoids repeated mutex locks. When porting code between SDKs, wrap the Rust callback with `for event in events { ... }`.
 
-**Note on timestamps:** The watcher does not populate `event.timestamp` because that would require an extra `getBlock` RPC call per log. If you need timestamps (e.g. for reconciler expiry via `dueAt`), enrich events yourself before calling `reconciler.ingest()`.
+Note on reorgs: Tempo has deterministic ~0.5s finality with no reorgs, so the watcher doesn't implement reorg handling. If you use this on a chain with reorgs, handle it yourself.
+
+Note on timestamps: The watcher doesn't populate `event.timestamp` — that would require an extra `getBlock` call per log. Enrich events yourself before `reconciler.ingest()` if you need timestamps for `dueAt`.
 
 ### `getTip20TransferHistory(options): Promise<PaymentEvent[]>`
 
@@ -283,7 +285,16 @@ Clear everything. Start fresh.
 
 ### `exportCsv(results: MatchResult[]): string`
 
-CSV string. Columns: timestamp, block_number, tx_hash, from, to, token, amount_raw, amount_human, memo_raw, memo_type, memo_ulid, status, expected_amount, reason, and any meta_* columns.
+CSV string with 23 fixed columns plus dynamic `meta_*` columns (one per unique key in `expected.meta` across all results):
+
+```
+timestamp, block_number, tx_hash, log_index, chain_id,
+from, to, token, amount_raw, amount_human,
+memo_raw, memo_type, memo_ulid, memo_issuer_tag,
+status, expected_amount, expected_from, expected_to, expected_due_at,
+reason, overpaid_by, is_late, remaining_amount,
+meta_<key> ...
+```
 
 ### `exportJson(results: MatchResult[]): string`
 
@@ -316,7 +327,62 @@ result.errors  // WebhookBatchError[] — failed batch details
 
 `WebhookBatchError` has the original `results` for the failed batch, plus optional `statusCode` and `error` string.
 
-Headers: `X-Tempo-Reconcile-Idempotency-Key`, `X-Tempo-Reconcile-Timestamp`. If `secret` is set: `X-Tempo-Reconcile-Signature` (HMAC-SHA256).
+### `sign(payload, secret): string`
+
+Compute HMAC-SHA256 signature for webhook payload verification. Useful for building custom webhook consumers that verify incoming requests.
+
+```typescript
+import { sign } from '@tempo-reconcile/sdk'
+
+const signature = sign(requestBody, 'whsec_...')
+if (signature !== request.headers['x-tempo-reconcile-signature']) {
+  throw new Error('Invalid signature')
+}
+```
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `payload` | `string` | The raw request body string |
+| `secret` | `string` | The shared HMAC secret |
+
+**Returns:** Lowercase hex-encoded HMAC-SHA256 signature.
+
+Headers sent on every request:
+
+| Header | Value |
+|--------|-------|
+| `X-Tempo-Reconcile-Timestamp` | Unix seconds at batch creation time |
+| `X-Tempo-Reconcile-Idempotency-Key` | keccak256(body) hex — stable across retries for the same batch |
+| `X-Tempo-Reconcile-Signature` | HMAC-SHA256(body, secret) hex — only present when `secret` is set |
+
+Body shape:
+
+```json
+{
+  "id": "whevt_<32-hex-chars>",
+  "timestamp": 1709123456,
+  "events": [
+    {
+      "status": "matched",
+      "payment": {
+        "chainId": 42431, "blockNumber": 100, "txHash": "0x...", "logIndex": 0,
+        "token": "0x20c0...", "from": "0xsender", "to": "0xrecipient",
+        "amount": "10000000", "memoRaw": "0x01...", "timestamp": 1709123456
+      },
+      "expected": {
+        "memoRaw": "0x01...", "token": "0x20c0...", "to": "0xrecipient",
+        "amount": "10000000", "from": null, "dueAt": null, "meta": null
+      },
+      "reason": null,
+      "overpaidBy": null,
+      "remainingAmount": null,
+      "isLate": false
+    }
+  ]
+}
+```
+
+All `amount` fields are decimal strings (safe for large values).
 
 ---
 
@@ -535,8 +601,8 @@ type AddressMetadata = {
   txCount: number
   lastActivityTimestamp: number
   createdTimestamp: number
-  createdTxHash: `0x${string}`
-  createdBy: `0x${string}`
+  createdTxHash?: `0x${string}`
+  createdBy?: `0x${string}`
 }
 
 type TokenBalance = { token: `0x${string}`; balance: string; name: string; symbol: string; currency: string; decimals: number }
@@ -557,6 +623,144 @@ type HistoryResponse = {
   error: string | null
 }
 ```
+
+---
+
+## Rust API reference
+
+The `tempo-reconcile` crate mirrors the TypeScript SDK. Add it to `Cargo.toml`:
+
+```toml
+[dependencies]
+tempo-reconcile = { version = "0.1", features = ["serde", "rand", "export", "watcher", "webhook", "explorer"] }
+```
+
+### Feature flags
+
+| Feature | What it enables | Extra deps |
+|---------|----------------|------------|
+| *(none)* | memo encode/decode, reconciler | — |
+| `rand` | `random_salt()` | `rand` |
+| `serde` | `Serialize`/`Deserialize` on all types | `serde` |
+| `export` | `export_csv`, `export_json`, `export_jsonl` | `serde_json` |
+| `webhook` | `send_webhook` | `reqwest`, `hmac`, `sha2`, `rand` |
+| `watcher` | `watch_tip20_transfers`, `get_tip20_transfer_history` | `reqwest`, `tokio` |
+| `watcher-ws` | `watch_tip20_transfers_ws` | `tokio-tungstenite` |
+| `explorer` | `ExplorerClient` | `reqwest` |
+
+Typical production setup:
+
+```toml
+tempo-reconcile = { version = "0.1", features = ["serde", "export", "watcher", "webhook"] }
+```
+
+### Memo functions
+
+| Function | Description |
+|---|---|
+| `encode_memo_v1(params: &EncodeMemoV1Params)` | Encode a bytes32 memo. Returns `Result<String, MemoError>`. |
+| `decode_memo_v1(hex: &str)` | Decode a v1 structured memo. Returns `Option<MemoV1>`. |
+| `decode_memo(hex: &str)` | Decode any memo — v1 or plain text. Returns `Option<Memo>`. |
+| `decode_memo_text(hex: &str)` | Try to decode a bytes32 as UTF-8 text. Returns `Option<String>`. |
+| `is_memo_v1(hex: &str)` | Return `true` if the hex string is a valid v1 memo. |
+| `issuer_tag_from_namespace(ns: &str)` | Compute the 8-byte issuer tag from a namespace string. |
+| `random_salt()` | Generate a random 7-byte salt (requires feature `rand`). |
+| `bytes16_to_ulid(id16: &[u8; 16])` | Convert 16-byte binary ULID to a Crockford base32 string. |
+| `ulid_to_bytes16(ulid: &str)` | Convert a ULID string to 16-byte binary. |
+
+`EncodeMemoV1Params` struct:
+```rust
+pub struct EncodeMemoV1Params {
+    pub memo_type: MemoType,
+    pub issuer_tag: u64,
+    pub ulid: String,
+    pub salt: Option<[u8; 7]>,
+}
+```
+
+### Reconciler
+
+`Reconciler::new(opts: ReconcilerOptions)` — creates a reconciler backed by `InMemoryStore`.
+`Reconciler::with_store(store: S, opts: ReconcilerOptions)` — creates a reconciler with a custom store.
+`ReconcilerOptions::new()` sets `allow_overpayment: true`; all other fields use `Default`.
+
+**`ReconcilerOptions` fields:**
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `issuer_tag` | `Option<u64>` | `None` | Only match memos with this issuer tag. `None` accepts any issuer. |
+| `strict_sender` | `bool` | `false` | Require `event.from == expected.from` when `expected.from` is set. |
+| `allow_overpayment` | `bool` | `true` | Accept payments above the expected amount as `matched`. |
+| `allow_partial` | `bool` | `false` | Accumulate underpayments; emit `matched` when cumulative total reaches expected. |
+| `reject_expired` | `bool` | `false` | Emit `expired` for payments arriving after `expected.due_at`. |
+| `amount_tolerance_bps` | `u32` | `0` | Basis-point tolerance (100 = 1%). Capped at 10 000. |
+| `partial_tolerance_mode` | `ToleranceMode` | `Final` | How tolerance applies to partial payments (see below). |
+
+`ToleranceMode::Final` — tolerance applies to the final cumulative total only.
+`ToleranceMode::Each` — tolerance applies per individual payment; a single underpayment beyond tolerance is immediately `mismatch_amount`.
+
+**Match statuses:**
+
+| Status | Description |
+|--------|-------------|
+| `Matched` | Memo found, amount within tolerance, all checks passed |
+| `Partial` | Partial payment accumulated, cumulative total below expected |
+| `UnknownMemo` | Memo present but not in expected payments (or issuer tag mismatch) |
+| `NoMemo` | Transfer event without a memo field |
+| `MismatchAmount` | Memo found but amount outside tolerance |
+| `MismatchToken` | Memo found but wrong token contract |
+| `MismatchParty` | Memo found but wrong sender (strict mode) or recipient |
+| `Expired` | Payment arrived after `due_at` (with `reject_expired` enabled) |
+
+Store types: `ReconcileStore` (trait), `InMemoryStore` (default in-memory implementation).
+
+Errors: `ReconcileError`, `MemoError`.
+
+### Export
+
+| Function | Description |
+|---|---|
+| `export_csv(results: &[MatchResult])` | Serialize results as CSV (requires feature `export`). |
+| `export_json(results: &[MatchResult])` | Serialize results as a JSON array. |
+| `export_jsonl(results: &[MatchResult])` | Serialize results as newline-delimited JSON. |
+
+### Watcher (feature `watcher`)
+
+| Function / Type | Description |
+|---|---|
+| `watch_tip20_transfers(config: WatchConfig, cb)` | Start polling watcher. Returns `WatchHandle` (call `.stop()` to cancel). |
+| `get_tip20_transfer_history(config: WatchConfig)` | Fetch historical transfers in one call. |
+| `WatchConfig` | RPC URL, chain ID, token, address filters, polling interval. |
+| `WatchHandle` | Handle returned by `watch_tip20_transfers`. Call `.stop()` to cancel. |
+| `WatcherError` | Error type for watcher operations. |
+
+Websocket variant (feature `watcher-ws`): `watch_tip20_transfers_ws(config: WatchWsConfig, cb)`, `WatchWsConfig`.
+
+### Webhook (feature `webhook`)
+
+| Function / Type | Description |
+|---|---|
+| `send_webhook(config: WebhookConfig, results: &[MatchResult])` | POST results to a webhook endpoint with retry + jitter. |
+| `WebhookConfig` | URL, HMAC secret, batch size, max retries, timeout. |
+| `WebhookResult` | `{ sent, failed, errors }` — aggregate delivery outcome. |
+| `WebhookBatchError` | Failed batch with optional `status_code` and `error` string. |
+| `WebhookError` | Error type for webhook operations. |
+
+### Explorer (feature `explorer`)
+
+| Type / Method | Description |
+|---|---|
+| `ExplorerClient::new(base_url: &str)` | Create a client pointed at a custom Explorer API URL. |
+| `ExplorerClient::get_metadata(addr: &str)` | Fetch `AddressMetadata` for an address. Returns `ExplorerError::NotFound` on 404. |
+| `ExplorerClient::get_balances(addr: &str)` | Fetch `BalancesResponse` for an address. Returns empty balances on 404. |
+| `ExplorerClient::get_history(addr, limit, offset)` | Fetch `HistoryResponse` (paginated). `limit`/`offset` are `Option<u32>`. Returns empty on 404. |
+| `BalancesResponse` | `{ balances: Vec<TokenBalance> }` — wrapper returned by `get_balances`. |
+| `HistoryResponse` | Paginated response: `transactions`, `total`, `offset`, `limit`, `has_more`, `count_capped`, `error`. |
+| `ExplorerTransaction` | Full transaction: `hash`, `block_number`, `timestamp`, `from`, `to`, `value`, `status`, `gas_used`, `effective_gas_price`, `known_events`. |
+| `KnownEvent` | `{ event_type, note, parts: Vec<KnownEventPart>, meta }` |
+| `KnownEventPart` | `{ part_type: String, value: KnownEventPartValue }` |
+| `KnownEventPartValue` | `Text(String)` or `Amount { token, value, decimals, symbol }` |
+| `ExplorerError` | Error type: `NotFound(String)`, `Http(u16)`, `Network(String)`, `Parse(String)`. |
 
 ---
 

@@ -1,0 +1,26 @@
+coverage:
+  status:
+    project:
+      default:
+        # Overall project coverage must not drop below 75%
+        target: 75%
+        threshold: 2%
+    patch:
+      default:
+        # New code in a PR must have at least 80% coverage
+        target: 80%
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: false
+
+flags:
+  rust:
+    paths:
+      - rs/
+    carryforward: true
+  ts:
+    paths:
+      - ts/src/
+    carryforward: true

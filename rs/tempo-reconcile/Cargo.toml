@@ -1,0 +1,53 @@
+[package]
+name = "tempo-reconcile"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+license = "MIT"
+description = "Reconciliation SDK for TIP-20 payments on Tempo"
+keywords = ["tempo", "blockchain", "payment", "reconciliation", "tip20"]
+categories = ["cryptography::cryptocurrencies", "finance"]
+repository = "https://github.com/valpaq/tempo-reconciliation-sdk"
+homepage = "https://github.com/valpaq/tempo-reconciliation-sdk"
+documentation = "https://docs.rs/tempo-reconcile"
+readme = "README.md"
+
+[features]
+default = []
+rand = ["dep:rand"]
+serde = ["dep:serde"]
+export = ["dep:serde_json"]
+watcher = ["dep:tokio", "dep:reqwest", "dep:serde_json"]
+watcher-ws = ["watcher", "dep:tokio-tungstenite", "dep:futures-util"]
+webhook = ["watcher", "rand", "dep:hmac", "dep:sha2"]
+explorer = ["dep:reqwest", "dep:serde_json", "dep:tokio"]
+full = ["rand", "serde", "export", "watcher", "watcher-ws", "webhook", "explorer"]
+
+[dependencies]
+sha3 = "0.10"
+hex = "0.4"
+thiserror = "2"
+serde_json = { version = "1", optional = true }
+rand = { version = "0.8", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
+hmac = { version = "0.12", optional = true }
+sha2 = { version = "0.10", optional = true }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"], optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"], optional = true }
+
+[[example]]
+name = "showcase"
+required-features = ["rand", "export"]
+
+[dev-dependencies]
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync"] }
+mockito = "1"
+tokio-tungstenite = "0.24"
+futures-util = { version = "0.3", features = ["sink", "std"] }
+proptest = "1"
+ulid = "1"

@@ -10,6 +10,7 @@ Documentation for `@tempo-reconcile/sdk`.
 ## Reference
 
 - [API](./API.md) -- every function, type, and option
+- [CLI](./CLI.md) -- `tempo-reconcile` binary reference
 - [Memo spec](../spec/MEMO-SPEC.md) -- TEMPO-RECONCILE-MEMO-001 bytes32 layout
 
 ## Quick reference

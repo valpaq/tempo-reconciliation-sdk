@@ -1,0 +1,35 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'  # Weekly Monday 04:00 UTC
+
+permissions:
+  security-events: write
+
+  # Note: Rust is covered by cargo-audit (in ci.yml) and clippy -D warnings.
+  # CodeQL's Rust support is experimental; cargo-audit + clippy provides better coverage.
+jobs:
+  analyze-ts:
+    name: Analyze TypeScript
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          source-root: ts/src
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3

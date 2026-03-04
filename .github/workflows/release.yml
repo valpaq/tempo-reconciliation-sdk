@@ -74,3 +74,123 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+
+  publish-rust:
+    name: Publish Rust crate
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: crates-io-publish
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rs
+
+      - name: Validate tag matches Cargo.toml
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          CRATE_VER=$(grep '^version' tempo-reconcile/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          [ "$TAG" = "$CRATE_VER" ] || { echo "Tag v$TAG != Cargo.toml $CRATE_VER"; exit 1; }
+        working-directory: rs
+
+      - name: Test
+        run: cargo test --all-features
+        working-directory: rs
+
+      - name: Clippy
+        run: cargo clippy --all-features -- -D warnings
+        working-directory: rs
+
+      - name: Format check
+        run: cargo fmt --check
+        working-directory: rs
+
+      - name: Doc check
+        run: cargo doc --all-features --no-deps
+        working-directory: rs
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
+      - name: Semver check
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: tempo-reconcile
+          manifest-path: rs/Cargo.toml
+
+      - name: Publish library
+        run: cargo publish -p tempo-reconcile
+        working-directory: rs
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+      - name: Publish CLI
+        # --no-verify: CLI depends on the lib crate just published above;
+        # crates.io index lag means verification would fail to resolve it.
+        run: cargo publish -p tempo-reconcile-cli --no-verify
+        working-directory: rs
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+
+  build-cli:
+    name: CLI binary (${{ matrix.target }})
+    needs: release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary: tempo-reconcile
+            asset: tempo-reconcile-linux-x86_64
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            binary: tempo-reconcile
+            asset: tempo-reconcile-macos-arm64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            binary: tempo-reconcile
+            asset: tempo-reconcile-linux-aarch64
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            binary: tempo-reconcile.exe
+            asset: tempo-reconcile-windows-x86_64.exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (aarch64-linux)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rs
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release -p tempo-reconcile-cli --target ${{ matrix.target }}
+        working-directory: rs
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'aarch64-linux-gnu-gcc' || '' }}
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          cp rs/target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.asset }}
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset }}

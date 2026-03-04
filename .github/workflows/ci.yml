@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '0 3 * * 1'  # Weekly Monday 03:00 UTC
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,12 +17,172 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  rust:
+    name: Rust (test / clippy / fmt)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: rs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt, llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rs
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Test (workspace)
+        run: cargo test --workspace --all-features
+
+      - name: Coverage
+        run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v5
+        with:
+          files: rs/lcov.info
+          flags: rust
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Fmt
+        run: cargo fmt --check
+
+      - name: Doc
+        run: cargo doc --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+      - name: Semver check
+        uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          package: tempo-reconcile
+          manifest-path: rs/Cargo.toml
+
+      - name: Check Rust docs sync
+        run: bash scripts/check-rust-docs-sync.sh
+        working-directory: ${{ github.workspace }}
+
+  rust-cross:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    defaults:
+      run:
+        working-directory: rs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rs
+          key: ${{ matrix.os }}
+
+      - name: Test
+        run: cargo test --all-features
+
+  rust-msrv:
+    name: Rust MSRV (1.70)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: rs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.70
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rs
+          key: msrv
+
+      - name: Test (all features)
+        run: cargo test --all-features
+
+  rust-features:
+    name: Rust feature combinations
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: rs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rs
+          key: features
+
+      - name: No default features (pure memo + reconciler)
+        run: cargo test --no-default-features
+
+      - name: Feature rand
+        run: cargo test --features rand
+
+      - name: Feature serde
+        run: cargo test --features serde
+
+      - name: Feature export
+        run: cargo test --features export
+
+      - name: Feature watcher
+        run: cargo test --features watcher
+
+      - name: Feature watcher-ws
+        run: cargo test --features watcher-ws
+
+      - name: Feature webhook
+        run: cargo test --features webhook
+
+      - name: Feature explorer
+        run: cargo test --features explorer
+
+  rust-audit:
+    name: Rust security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: rs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: taiki-e/install-action@cargo-audit
+
+      - name: Audit
+        run: cargo audit
+
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [18, 20, 22]
     defaults:
       run:
         working-directory: ts
@@ -71,3 +234,68 @@ jobs:
       - name: Check docs sync
         if: matrix.node-version == 20
         run: bash ../scripts/check-docs-sync.sh
+
+      - name: Security audit
+        if: matrix.node-version == 20
+        run: pnpm audit --audit-level=high
+
+  e2e:
+    name: E2E testnet (Moderato)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    env:
+      TEMPO_LIVE: "1"
+      SENDER_KEY: ${{ secrets.SENDER_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: ts/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: ts
+
+      - name: TS live tests
+        run: pnpm test -- test/watcher/live-testnet.test.ts
+        working-directory: ts
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rs
+
+      - name: Rust live tests
+        run: cargo test --test live_testnet --features watcher -- --nocapture
+        working-directory: rs
+
+  stress:
+    name: Stress tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: rs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rs
+
+      - name: Stress test (100k events)
+        run: cargo test --all-features -- --include-ignored reconciler_handles_100k_events
+        timeout-minutes: 5
