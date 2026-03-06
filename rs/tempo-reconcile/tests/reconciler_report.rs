@@ -9,7 +9,7 @@ use tempo_reconcile::{
 
 #[test]
 fn ingest_many_processes_all_events() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo1 = make_memo(MemoType::Invoice, ULID_A);
     let memo2 = make_memo(MemoType::Payroll, ULID_A); // same ULID, different type byte
 
@@ -29,7 +29,7 @@ fn ingest_many_processes_all_events() {
 
 #[test]
 fn ingest_many_preserves_result_order() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, ULID_A);
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -47,7 +47,7 @@ fn ingest_many_preserves_result_order() {
 
 #[test]
 fn report_total_received_amount_sums_all_events() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, ULID_A);
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -65,7 +65,7 @@ fn report_total_received_amount_sums_all_events() {
 
 #[test]
 fn report_total_expected_amount_includes_pending_and_matched() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo1 = make_memo(MemoType::Invoice, ULID_A);
     let memo2 = make_memo(MemoType::Payroll, ULID_A); // same ULID, different type byte
     r.expect(make_expected(&memo1, 10_000_000)).unwrap();
@@ -81,7 +81,7 @@ fn report_total_expected_amount_includes_pending_and_matched() {
 
 #[test]
 fn report_issue_count_equals_issues_len() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, ULID_A);
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -117,7 +117,7 @@ fn all_memo_types_can_be_matched() {
         (Custom, ULID_A),
     ];
 
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memos: Vec<String> = type_ulid_pairs
         .iter()
         .map(|(t, u)| make_memo(t.clone(), u))
@@ -149,7 +149,7 @@ async fn concurrent_ingest_via_arc_mutex() {
         })
         .collect();
 
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     for memo in &memos {
         let exp = ExpectedPayment {
             memo_raw: memo.clone(),
@@ -205,7 +205,7 @@ async fn concurrent_ingest_via_arc_mutex() {
 fn meta_field_preserved_in_matched_result() {
     use std::collections::HashMap;
     let memo = make_memo(MemoType::Invoice, ULID_A);
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let mut exp = make_expected(&memo, 10_000_000);
     exp.meta = Some(HashMap::from([
         ("invoiceId".to_string(), "INV-001".to_string()),
@@ -228,7 +228,7 @@ fn ceiling_div_no_overflow_at_u128_max() {
     // Verify the safe formula handles this correctly.
     let mut opts = ReconcilerOptions::new();
     opts.amount_tolerance_bps = 1; // 0.01% — non-zero to exercise ceiling_div
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
     let memo = make_memo(MemoType::Invoice, ULID_A);
     r.expect(make_expected(&memo, u128::MAX)).unwrap();
     let result = r.ingest(make_event(Some(&memo), u128::MAX));
@@ -278,7 +278,8 @@ fn custom_store_works_with_reconciler() {
     }
 
     let memo = make_memo(MemoType::Invoice, ULID_A);
-    let mut r = Reconciler::with_store(MyStore(InMemoryStore::new()), ReconcilerOptions::new());
+    let mut r =
+        Reconciler::with_store(MyStore(InMemoryStore::new()), ReconcilerOptions::new()).unwrap();
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
     let result = r.ingest(make_event(Some(&memo), 10_000_000));
     assert_eq!(result.status, MatchStatus::Matched);
@@ -297,7 +298,7 @@ fn report_contains_all_eight_match_statuses() {
     opts.reject_expired = true; // enables Expired
     opts.allow_overpayment = false; // enables MismatchAmount via overpayment
 
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
 
     // Six unique memos via different type codes
     let m_matched = make_memo(Invoice, ULID_A);

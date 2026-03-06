@@ -220,6 +220,41 @@ fn memo_issuer_tag_json_flag() {
 }
 
 // ---------------------------------------------------------------------------
+// memo encode --salt
+// ---------------------------------------------------------------------------
+
+#[test]
+fn encode_with_salt_flag() {
+    let out = cli()
+        .args([
+            "memo",
+            "encode",
+            "--type",
+            "invoice",
+            "--namespace",
+            "test-ns",
+            "--ulid",
+            "01MASW9NF6YW40J40H289H858P",
+            "--salt",
+            "ff010203040506",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "memo encode --salt failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let hex = String::from_utf8(out.stdout).unwrap().trim().to_string();
+    assert!(hex.starts_with("0x"), "output must start with 0x");
+    assert_eq!(hex.len(), 66, "must be 0x + 64 hex chars");
+    assert!(
+        hex.ends_with("ff010203040506"),
+        "last 7 bytes must match salt, got: {hex}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // encode → decode roundtrip via subprocess
 // ---------------------------------------------------------------------------
 
@@ -469,6 +504,48 @@ fn run_format_jsonl_each_line_is_valid_json() {
         serde_json::from_str::<serde_json::Value>(line)
             .unwrap_or_else(|_| panic!("JSONL line is not valid JSON: {line}"));
     }
+}
+
+#[test]
+fn run_with_issuer_namespace_filters_memos() {
+    // Encode a memo for ns1 and ns2.
+    let memo_ns1 = encode_via_cli("ns1", "01MASW9NF6YW40J40H289H858P");
+    let memo_ns2 = encode_via_cli("ns2", "01MASW9NF6YW40J40H289H858Q");
+
+    // Expect memo from ns1 only.
+    let expected_csv = format!("memo_raw,token,to,amount\n{memo_ns1},0x20c0,0xto,1000000\n");
+    // Events: one from ns1 (should match), one from ns2 (filtered → unknown_memo).
+    let events_jsonl = format!(
+        r#"{{"chainId":1,"blockNumber":1,"txHash":"0xaa","logIndex":0,"token":"0x20c0","from":"0xf","to":"0xto","amount":"1000000","memoRaw":"{memo_ns1}"}}
+{{"chainId":1,"blockNumber":2,"txHash":"0xbb","logIndex":0,"token":"0x20c0","from":"0xf","to":"0xto","amount":"1000000","memoRaw":"{memo_ns2}"}}
+"#
+    );
+
+    let expected_file = write_tmp(&expected_csv);
+    let events_file = write_tmp(&events_jsonl);
+    let out_file = NamedTempFile::new().unwrap();
+
+    let status = cli()
+        .args([
+            "run",
+            "--events",
+            events_file.path().to_str().unwrap(),
+            "--expected",
+            expected_file.path().to_str().unwrap(),
+            "--out",
+            out_file.path().to_str().unwrap(),
+            "--issuer-namespace",
+            "ns1",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success(), "run with --issuer-namespace must exit 0");
+
+    let csv = std::fs::read_to_string(out_file.path()).unwrap();
+    assert!(
+        csv.contains("matched"),
+        "ns1 payment must appear as matched in CSV output"
+    );
 }
 
 #[test]

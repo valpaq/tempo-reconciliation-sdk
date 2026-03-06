@@ -66,11 +66,9 @@ impl RpcClient {
                 .map_err(|e| WatcherError::Http(e.to_string()))?;
 
             let status = response.status();
-            if status.as_u16() == 429 {
+            if status.as_u16() == 429 || status.is_server_error() {
                 if is_last {
-                    return Err(WatcherError::Http(
-                        "rate limited (429) after retries".into(),
-                    ));
+                    return Err(WatcherError::Http(format!("HTTP {status} after retries")));
                 }
                 let retry_secs = response
                     .headers()

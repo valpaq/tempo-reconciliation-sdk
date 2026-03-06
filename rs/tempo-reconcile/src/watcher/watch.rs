@@ -36,6 +36,8 @@ pub struct WatchConfig {
     pub start_block: Option<u64>,
     /// Per-request timeout in milliseconds for RPC calls. Default: 30 000.
     pub rpc_timeout_ms: u64,
+    /// Optional error callback invoked when RPC errors occur during polling.
+    pub on_error: Option<Box<dyn Fn(WatcherError) + Send + Sync>>,
 }
 
 impl WatchConfig {
@@ -53,6 +55,7 @@ impl WatchConfig {
             dedup_max_size: 10_000,
             start_block: None,
             rpc_timeout_ms: 30_000,
+            on_error: None,
         }
     }
 }
@@ -97,7 +100,7 @@ pub async fn get_tip20_transfer_history(
     while start <= to_block {
         let end = (start + batch - 1).min(to_block);
         let filter = build_filter(
-            &sig,
+            sig,
             &config.token,
             &config.from,
             &config.to,
@@ -146,7 +149,12 @@ where
     let handle = tokio::spawn(async move {
         let rpc = match RpcClient::new(config.rpc_url.clone(), config.rpc_timeout_ms) {
             Ok(r) => r,
-            Err(_) => return,
+            Err(e) => {
+                if let Some(ref cb) = config.on_error {
+                    cb(WatcherError::Rpc(e.to_string()));
+                }
+                return;
+            }
         };
         let mut tip = initial_tip;
         let mut cache = DedupCache::new(config.dedup_ttl_secs, config.dedup_max_size);
@@ -157,32 +165,40 @@ where
                 _ = sleep(Duration::from_millis(config.poll_interval_ms)) => {
                     let latest = match rpc.block_number().await {
                         Ok(b) => b,
-                        Err(_) => continue,
+                        Err(e) => {
+                            if let Some(ref cb) = config.on_error { cb(e); }
+                            continue;
+                        }
                     };
                     if latest <= tip {
                         continue;
                     }
                     let from = tip + 1;
                     let to = latest.min(tip + config.batch_size.max(1));
-                    let filter = build_filter(&sig, &config.token, &config.from, &config.to, from, to, config.include_transfer_only);
-                    if let Ok(logs) = rpc.get_logs(filter).await {
-                        let new_events: Vec<PaymentEvent> = logs
-                            .iter()
-                            .filter_map(|log| {
-                                decode_any_log(
-                                    log,
-                                    config.chain_id,
-                                    &config.token,
-                                    config.include_transfer_only,
-                                )
-                            })
-                            .filter(|e| {
-                                let key = format!("{}:{}", e.tx_hash, e.log_index);
-                                cache.check_and_insert(&key)
-                            })
-                            .collect();
-                        if !new_events.is_empty() {
-                            on_events(new_events);
+                    let filter = build_filter(sig, &config.token, &config.from, &config.to, from, to, config.include_transfer_only);
+                    match rpc.get_logs(filter).await {
+                        Ok(logs) => {
+                            let new_events: Vec<PaymentEvent> = logs
+                                .iter()
+                                .filter_map(|log| {
+                                    decode_any_log(
+                                        log,
+                                        config.chain_id,
+                                        &config.token,
+                                        config.include_transfer_only,
+                                    )
+                                })
+                                .filter(|e| {
+                                    let key = format!("{}:{}", e.tx_hash, e.log_index);
+                                    cache.check_and_insert(&key)
+                                })
+                                .collect();
+                            if !new_events.is_empty() {
+                                on_events(new_events);
+                            }
+                        }
+                        Err(e) => {
+                            if let Some(ref cb) = config.on_error { cb(e); }
                         }
                     }
                     tip = to;
@@ -198,23 +214,31 @@ where
 }
 
 /// keccak256("TransferWithMemo(address,address,uint256,bytes32)") as "0x" hex.
-pub(super) fn event_sig() -> String {
+pub(super) fn event_sig() -> &'static str {
     use sha3::{Digest, Keccak256};
-    format!(
-        "0x{}",
-        hex::encode(Keccak256::digest(
-            b"TransferWithMemo(address,address,uint256,bytes32)"
-        ))
-    )
+    use std::sync::OnceLock;
+    static SIG: OnceLock<String> = OnceLock::new();
+    SIG.get_or_init(|| {
+        format!(
+            "0x{}",
+            hex::encode(Keccak256::digest(
+                b"TransferWithMemo(address,address,uint256,bytes32)"
+            ))
+        )
+    })
 }
 
 /// keccak256("Transfer(address,address,uint256)") as "0x" hex.
-pub(super) fn transfer_event_sig() -> String {
+pub(super) fn transfer_event_sig() -> &'static str {
     use sha3::{Digest, Keccak256};
-    format!(
-        "0x{}",
-        hex::encode(Keccak256::digest(b"Transfer(address,address,uint256)"))
-    )
+    use std::sync::OnceLock;
+    static SIG: OnceLock<String> = OnceLock::new();
+    SIG.get_or_init(|| {
+        format!(
+            "0x{}",
+            hex::encode(Keccak256::digest(b"Transfer(address,address,uint256)"))
+        )
+    })
 }
 
 fn decode_any_log(
@@ -235,6 +259,29 @@ fn decode_any_log(
     }
 }
 
+/// Build address filter topics (shared between HTTP and WS watchers).
+pub(super) fn build_address_topics(
+    from: &Option<String>,
+    to: &Option<String>,
+    topics: &mut Vec<serde_json::Value>,
+) {
+    if from.is_some() || to.is_some() {
+        topics.push(match from {
+            Some(addr) => serde_json::Value::String(format!(
+                "0x{:0>64}",
+                addr.strip_prefix("0x").unwrap_or(addr.as_str())
+            )),
+            None => serde_json::Value::Null,
+        });
+        if let Some(addr) = to {
+            topics.push(serde_json::Value::String(format!(
+                "0x{:0>64}",
+                addr.strip_prefix("0x").unwrap_or(addr.as_str())
+            )));
+        }
+    }
+}
+
 fn build_filter(
     sig: &str,
     token: &str,
@@ -250,25 +297,7 @@ fn build_filter(
         json!(sig)
     };
     let mut topics: Vec<serde_json::Value> = vec![sig_value];
-
-    if from.is_some() || to.is_some() {
-        // topics[1] = from address (padded) or null for any
-        topics.push(match from {
-            Some(addr) => serde_json::Value::String(format!(
-                "0x{:0>64}",
-                addr.strip_prefix("0x").unwrap_or(addr.as_str())
-            )),
-            None => serde_json::Value::Null,
-        });
-        // topics[2] = to address (only when to filter is set)
-        if let Some(addr) = to {
-            let padded = format!(
-                "0x{:0>64}",
-                addr.strip_prefix("0x").unwrap_or(addr.as_str())
-            );
-            topics.push(serde_json::Value::String(padded));
-        }
-    }
+    build_address_topics(from, to, &mut topics);
 
     json!({
         "fromBlock": format!("0x{:x}", from_block),

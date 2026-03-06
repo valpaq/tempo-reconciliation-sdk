@@ -1,10 +1,10 @@
 mod reconciler_helpers;
 use reconciler_helpers::*;
-use tempo_reconcile::{MatchStatus, Reconciler, ReconcilerOptions};
+use tempo_reconcile::{MatchStatus, ReconcileError, Reconciler, ReconcilerOptions};
 
 #[test]
 fn matched_exact_amount() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -15,7 +15,7 @@ fn matched_exact_amount() {
 
 #[test]
 fn matched_with_overpayment() {
-    let mut r = Reconciler::new(ReconcilerOptions::new()); // allow_overpayment=true by default
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap(); // allow_overpayment=true by default
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -26,14 +26,14 @@ fn matched_with_overpayment() {
 
 #[test]
 fn no_memo() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let result = r.ingest(make_event(None, 10_000_000));
     assert_eq!(result.status, MatchStatus::NoMemo);
 }
 
 #[test]
 fn unknown_memo() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     // not registered in expected
     let result = r.ingest(make_event(Some(&memo), 10_000_000));
@@ -42,7 +42,7 @@ fn unknown_memo() {
 
 #[test]
 fn mismatch_amount_underpaid() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -53,7 +53,7 @@ fn mismatch_amount_underpaid() {
 
 #[test]
 fn mismatch_token() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -65,7 +65,7 @@ fn mismatch_token() {
 
 #[test]
 fn mismatch_party_recipient() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -79,7 +79,7 @@ fn mismatch_party_recipient() {
 fn mismatch_party_sender_strict() {
     let mut opts = ReconcilerOptions::new();
     opts.strict_sender = true;
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
 
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     let mut exp = make_expected(&memo, 10_000_000);
@@ -94,7 +94,7 @@ fn mismatch_party_sender_strict() {
 fn expired_payment() {
     let mut opts = ReconcilerOptions::new();
     opts.reject_expired = true;
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
 
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     let mut exp = make_expected(&memo, 10_000_000);
@@ -112,7 +112,7 @@ fn expired_payment() {
 fn partial_payments_accumulate() {
     let mut opts = ReconcilerOptions::new();
     opts.allow_partial = true;
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
 
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
@@ -133,7 +133,7 @@ fn partial_payments_accumulate() {
 
 #[test]
 fn idempotency_same_event() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -145,7 +145,7 @@ fn idempotency_same_event() {
 
 #[test]
 fn duplicate_expect_errors() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
     assert!(r.expect(make_expected(&memo, 10_000_000)).is_err());
@@ -153,7 +153,7 @@ fn duplicate_expect_errors() {
 
 #[test]
 fn report_summary() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
     r.ingest(make_event(Some(&memo), 10_000_000));
@@ -168,7 +168,7 @@ fn report_summary() {
 fn tolerance_allows_underpayment_within_bps() {
     let mut opts = ReconcilerOptions::new();
     opts.amount_tolerance_bps = 100; // 1%
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
 
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
@@ -182,7 +182,7 @@ fn tolerance_allows_underpayment_within_bps() {
 fn overpayment_rejected_when_disabled() {
     let mut opts = ReconcilerOptions::new();
     opts.allow_overpayment = false;
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
 
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
@@ -194,7 +194,7 @@ fn overpayment_rejected_when_disabled() {
 
 #[test]
 fn reset_clears_all_state() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
     r.ingest(make_event(Some(&memo), 10_000_000));
@@ -209,7 +209,7 @@ fn reset_clears_all_state() {
 
 #[test]
 fn remove_expected_prevents_match() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -220,13 +220,13 @@ fn remove_expected_prevents_match() {
 
 #[test]
 fn remove_expected_returns_false_when_not_found() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     assert!(!r.remove_expected("0xnonexistent"));
 }
 
 #[test]
 fn re_register_after_remove() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
     r.remove_expected(&memo);
@@ -238,7 +238,7 @@ fn re_register_after_remove() {
 
 #[test]
 fn report_with_pending_and_issues() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo1 = make_memo(MemoType::Invoice, "01MASW9NF6YW40J40H289H858P");
     let memo2 = make_memo(MemoType::Payroll, "01MASW9NF6YW40J40H289H8580");
 
@@ -267,7 +267,7 @@ fn issuer_tag_filter_allows_matching_tag() {
     let ns_tag = issuer_tag_from_namespace("test-ns");
     let mut opts = ReconcilerOptions::new();
     opts.issuer_tag = Some(ns_tag);
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
 
     let memo = make_memo(MemoType::Invoice, ULID_A);
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
@@ -280,7 +280,7 @@ fn issuer_tag_filter_allows_matching_tag() {
 fn issuer_tag_filter_rejects_wrong_tag() {
     let mut opts = ReconcilerOptions::new();
     opts.issuer_tag = Some(0xdeadbeef_u64); // does not match test-ns
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
 
     let memo = make_memo(MemoType::Invoice, ULID_A); // encoded with issuer_tag_from_namespace("test-ns")
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
@@ -293,7 +293,7 @@ fn issuer_tag_filter_rejects_wrong_tag() {
 fn issuer_tag_filter_rejects_non_v1_memo() {
     let mut opts = ReconcilerOptions::new();
     opts.issuer_tag = Some(issuer_tag_from_namespace("test-ns"));
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
 
     // All-zero memo: type byte 0x00 is not a valid v1 code → decode returns None
     let memo = "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -306,7 +306,7 @@ fn concurrent_reconciler_with_mutex() {
     use std::sync::{Arc, Mutex};
     use std::thread;
 
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     // Register 100 expected payments
     let memos: Vec<String> = (0..100)
         .map(|i| {
@@ -350,7 +350,7 @@ fn concurrent_reconciler_with_mutex() {
 
 #[test]
 fn report_after_reset_is_empty() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, ULID_A);
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
     r.ingest(make_event(Some(&memo), 10_000_000));
@@ -376,7 +376,7 @@ fn report_after_reset_is_empty() {
 fn remove_expected_clears_partial_state() {
     let mut opts = ReconcilerOptions::new();
     opts.allow_partial = true;
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
 
     let memo = make_memo(MemoType::Invoice, ULID_A);
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
@@ -404,7 +404,7 @@ fn remove_expected_clears_partial_state() {
 
 #[test]
 fn ingest_many_deduplicates_within_batch() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let memo = make_memo(MemoType::Invoice, ULID_A);
     r.expect(make_expected(&memo, 10_000_000)).unwrap();
 
@@ -422,7 +422,7 @@ fn ingest_many_deduplicates_within_batch() {
 
 #[test]
 fn ingest_many_empty_returns_empty() {
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
     let results = r.ingest_many(vec![]);
     assert!(results.is_empty());
 }
@@ -437,7 +437,7 @@ fn options_returns_configured_values() {
         allow_overpayment: false,
         ..ReconcilerOptions::new()
     };
-    let r = Reconciler::new(opts);
+    let r = Reconciler::new(opts).unwrap();
     let o = r.options();
     assert_eq!(o.amount_tolerance_bps, 500);
     assert!(o.strict_sender);
@@ -447,11 +447,23 @@ fn options_returns_configured_values() {
 }
 
 #[test]
+fn rejects_bps_above_10000() {
+    match Reconciler::new(ReconcilerOptions {
+        amount_tolerance_bps: 20000,
+        ..ReconcilerOptions::new()
+    }) {
+        Err(ReconcileError::InvalidToleranceBps(20000)) => {}
+        Err(e) => panic!("unexpected error: {e}"),
+        Ok(_) => panic!("expected InvalidToleranceBps error"),
+    }
+}
+
+#[test]
 fn report_total_matched_amount_uses_expected_amount() {
     // When overpayment is allowed: expected=100, payment=120 → totalMatchedAmount should be 100
     let mut opts = ReconcilerOptions::new();
     opts.allow_overpayment = true;
-    let mut r = Reconciler::new(opts);
+    let mut r = Reconciler::new(opts).unwrap();
     let memo = make_memo(MemoType::Invoice, ULID_A);
     r.expect(make_expected(&memo, 100)).unwrap();
     let mut event = make_event(Some(&memo), 120);

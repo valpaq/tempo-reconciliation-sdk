@@ -265,9 +265,8 @@ fn ulid_first_char_7_at_boundary_accepted() {
 }
 
 #[test]
-fn ulid_first_char_8_above_timestamp_range_accepted() {
-    // '8' is valid Crockford base32 but exceeds the ULID timestamp range.
-    // Our encoder performs no semantic timestamp validation — stores as bytes only.
+fn ulid_first_char_8_above_overflow_rejected() {
+    // '8' decodes to value 8, which exceeds 7 and would overflow 128 bits.
     let result = encode_memo_v1(&EncodeMemoV1Params {
         memo_type: MemoType::Invoice,
         issuer_tag: 0,
@@ -275,8 +274,8 @@ fn ulid_first_char_8_above_timestamp_range_accepted() {
         salt: None,
     });
     assert!(
-        result.is_ok(),
-        "ULID starting with '8' must be accepted (no timestamp check)"
+        result.is_err(),
+        "ULID starting with '8' must be rejected (128-bit overflow)"
     );
 }
 

@@ -20,11 +20,44 @@ fn format_amount_human(raw: u128) -> String {
     format!("{}.{:06}", whole, frac)
 }
 
+/// Extract decoded memo columns (type, ulid, issuer_tag) from a PaymentEvent.
+fn memo_columns(event: &crate::types::PaymentEvent) -> (String, String, String) {
+    match &event.memo {
+        Some(Memo::V1(m)) => (
+            m.t.as_str().to_string(),
+            m.ulid.clone(),
+            m.issuer_tag.to_string(),
+        ),
+        Some(Memo::Text(_)) => ("text".to_string(), String::new(), String::new()),
+        None => match &event.memo_raw {
+            Some(raw) => match decode_memo_v1(raw) {
+                Some(m) => (m.t.as_str().to_string(), m.ulid, m.issuer_tag.to_string()),
+                None => Default::default(),
+            },
+            None => Default::default(),
+        },
+    }
+}
+
+/// Extract expected payment columns (amount, from, to, due_at) from an optional ExpectedPayment.
+fn expected_columns(
+    expected: &Option<crate::types::ExpectedPayment>,
+) -> (String, String, String, String) {
+    match expected {
+        Some(e) => (
+            e.amount.to_string(),
+            e.from.clone().unwrap_or_default(),
+            e.to.clone(),
+            e.due_at.map(|d| d.to_string()).unwrap_or_default(),
+        ),
+        None => Default::default(),
+    }
+}
+
 /// Export a slice of MatchResult as a CSV string.
 ///
 /// Fixed columns + dynamic `meta_*` columns (one per unique key across all results).
 pub fn export_csv(results: &[MatchResult]) -> String {
-    // Collect all unique meta keys in deterministic order.
     let meta_keys: BTreeSet<String> = results
         .iter()
         .filter_map(|r| r.expected.as_ref())
@@ -34,7 +67,6 @@ pub fn export_csv(results: &[MatchResult]) -> String {
 
     let meta_keys: Vec<String> = meta_keys.into_iter().collect();
 
-    // Build header.
     let base_headers = vec![
         "timestamp",
         "block_number",
@@ -70,39 +102,9 @@ pub fn export_csv(results: &[MatchResult]) -> String {
 
     for r in results {
         let p = &r.payment;
-
-        // Memo fields — check pre-decoded field first, fall back to decoding memo_raw.
-        let (memo_type, memo_ulid, memo_issuer_tag) = match &p.memo {
-            Some(Memo::V1(m)) => (
-                m.t.as_str().to_string(),
-                m.ulid.clone(),
-                m.issuer_tag.to_string(),
-            ),
-            Some(Memo::Text(_)) => ("text".to_string(), String::new(), String::new()),
-            None => {
-                if let Some(raw) = &p.memo_raw {
-                    if let Some(m) = decode_memo_v1(raw) {
-                        (m.t.as_str().to_string(), m.ulid, m.issuer_tag.to_string())
-                    } else {
-                        (String::new(), String::new(), String::new())
-                    }
-                } else {
-                    (String::new(), String::new(), String::new())
-                }
-            }
-        };
-
-        let memo_raw = p.memo_raw.as_deref().unwrap_or("").to_string();
-
-        let (exp_amount, exp_from, exp_to, exp_due_at) = match &r.expected {
-            Some(e) => (
-                e.amount.to_string(),
-                e.from.clone().unwrap_or_default(),
-                e.to.clone(),
-                e.due_at.map(|d| d.to_string()).unwrap_or_default(),
-            ),
-            None => (String::new(), String::new(), String::new(), String::new()),
-        };
+        let (memo_type, memo_ulid, memo_issuer_tag) = memo_columns(p);
+        let (exp_amount, exp_from, exp_to, exp_due_at) = expected_columns(&r.expected);
+        let memo_raw = p.memo_raw.as_deref().unwrap_or("");
 
         let mut cols = vec![
             csv_escape(&p.timestamp.map(|t| t.to_string()).unwrap_or_default()),
@@ -115,7 +117,7 @@ pub fn export_csv(results: &[MatchResult]) -> String {
             csv_escape(&p.token),
             csv_escape(&p.amount.to_string()),
             csv_escape(&format_amount_human(p.amount)),
-            csv_escape(&memo_raw),
+            csv_escape(memo_raw),
             csv_escape(&memo_type),
             csv_escape(&memo_ulid),
             csv_escape(&memo_issuer_tag),
@@ -134,7 +136,6 @@ pub fn export_csv(results: &[MatchResult]) -> String {
             ),
         ];
 
-        // Dynamic meta columns.
         for k in &meta_keys {
             let val = r
                 .expected

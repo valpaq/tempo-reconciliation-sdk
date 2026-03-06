@@ -10,6 +10,8 @@ pub enum MemoError {
 pub enum ReconcileError {
     #[error("duplicate expected payment for memo_raw: {0}")]
     DuplicateExpected(String),
+    #[error("amount_tolerance_bps must be <= 10000, got {0}")]
+    InvalidToleranceBps(u32),
 }
 
 /// Errors returned by watcher functions.

@@ -231,7 +231,7 @@ Reference implementations: [github.com/valpaq/tempo-reconciliation-sdk](https://
 
 ## Test vectors
 
-See [vectors.json](./vectors.json) for machine-readable test vectors that any encoder/decoder implementation must pass.
+See [vectors.json](../spec/vectors.json) for machine-readable test vectors that any encoder/decoder implementation must pass.
 
 ### Positive vectors
 
@@ -242,6 +242,9 @@ See [vectors.json](./vectors.json) for machine-readable test vectors that any en
 | refund with default salt | refund | my-app | 3a180fb9d0177aa2 | 00000000000000 | `0x033a180fb9d0177aa201a2b3c4d5e6f708091011121314151600000000000000` |
 | batch with custom salt | batch | tempo-reconcile | fc7c8482914a04e8 | ff010203040506 | `0x04fc7c8482914a04e801a2b3c4d5e6f7080910111213141516ff010203040506` |
 | custom type with full salt | custom | tempo-reconcile | fc7c8482914a04e8 | aabbccddeeff00 | `0x0ffc7c8482914a04e801a2b3c4d5e6f7080910111213141516aabbccddeeff00` |
+| subscription with default salt | subscription | my-app | 3a180fb9d0177aa2 | 00000000000000 | `0x053a180fb9d0177aa201a2b3c4d5e6f708091011121314151600000000000000` |
+| invoice with min ULID (all zeros) | invoice | my-app | 3a180fb9d0177aa2 | 00000000000000 | `0x013a180fb9d0177aa20000000000000000000000000000000000000000000000` |
+| invoice with max ULID (all Zs) | invoice | tempo-reconcile | fc7c8482914a04e8 | 00000000000000 | `0x01fc7c8482914a04e8ffffffffffffffffffffffffffffffff00000000000000` |
 
 ### Negative vectors (decoder MUST return null)
 
@@ -253,6 +256,10 @@ See [vectors.json](./vectors.json) for machine-readable test vectors that any en
 | type 0x10 | future range, not a v1 type |
 | too short (31 bytes) | not 32 bytes |
 | too long (33 bytes) | not 32 bytes |
+| type 0x06 (reserved) | reserved range (0x06-0x0E) |
+| type 0x08 (reserved) | reserved range (0x06-0x0E) |
+| type 0x09 (reserved) | reserved range (0x06-0x0E) |
+| type 0x0E (reserved) | reserved range (0x06-0x0E) |
 
 ---
 

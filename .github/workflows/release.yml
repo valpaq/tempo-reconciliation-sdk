@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+      - "nonces-v*"
 
 permissions:
   contents: write
@@ -11,6 +12,7 @@ permissions:
 
 jobs:
   release:
+    if: "!startsWith(github.ref, 'refs/tags/nonces-v')"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: npm-publish
@@ -37,7 +39,7 @@ jobs:
       - name: Validate tag matches version
         run: |
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
+          PKG_VERSION=$(node -p "require('./packages/sdk/package.json').version")
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
             echo "::error::Tag v$TAG_VERSION does not match package.json version $PKG_VERSION"
             exit 1
@@ -66,7 +68,7 @@ jobs:
           fi
 
       - name: Publish
-        run: pnpm publish --no-git-checks --access public --provenance --tag ${{ steps.dist-tag.outputs.tag }}
+        run: pnpm --filter @tempo-reconcile/sdk publish --no-git-checks --access public --provenance --tag ${{ steps.dist-tag.outputs.tag }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -78,6 +80,7 @@ jobs:
   publish-rust:
     name: Publish Rust crate
     needs: release
+    if: "!startsWith(github.ref, 'refs/tags/nonces-v')"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: crates-io-publish
@@ -99,7 +102,7 @@ jobs:
         working-directory: rs
 
       - name: Test
-        run: cargo test --all-features
+        run: cargo test --workspace --all-features
         working-directory: rs
 
       - name: Clippy
@@ -139,6 +142,7 @@ jobs:
   build-cli:
     name: CLI binary (${{ matrix.target }})
     needs: release
+    if: "!startsWith(github.ref, 'refs/tags/nonces-v')"
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -194,3 +198,67 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.asset }}
+
+  publish-nonces:
+    name: Publish @tempo-reconcile/nonces
+    if: startsWith(github.ref, 'refs/tags/nonces-v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm-publish
+    defaults:
+      run:
+        working-directory: ts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: ts/pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Validate tag matches version
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/nonces-v}"
+          PKG_VERSION=$(node -p "require('./packages/nonces/package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag nonces-v$TAG_VERSION does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Type Check
+        run: pnpm --filter @tempo-reconcile/nonces lint
+
+      - name: Test
+        run: pnpm --filter @tempo-reconcile/nonces test
+
+      - name: Build
+        run: pnpm --filter @tempo-reconcile/nonces build
+
+      - name: Determine npm dist-tag
+        id: dist-tag
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/nonces-v}"
+          if [[ "$TAG_VERSION" == *-* ]]; then
+            echo "tag=next" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish
+        run: pnpm --filter @tempo-reconcile/nonces publish --no-git-checks --access public --provenance --tag ${{ steps.dist-tag.outputs.tag }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

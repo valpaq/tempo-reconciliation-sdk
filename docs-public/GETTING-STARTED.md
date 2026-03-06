@@ -63,7 +63,7 @@ await walletClient.writeContract({
 On the receiving side, watch for transfer events:
 
 ```typescript
-import { watchTip20Transfers } from '@tempo-reconcile/sdk'
+import { watchTip20Transfers, isMemoV1 } from '@tempo-reconcile/sdk'
 
 const stop = watchTip20Transfers(
   {
@@ -74,7 +74,7 @@ const stop = watchTip20Transfers(
   },
   (event) => {
     console.log('Payment received:', event.txHash)
-    console.log('Memo:', event.memo?.ulid)
+    console.log('Memo:', isMemoV1(event.memo) ? event.memo.ulid : event.memo)
     console.log('Amount:', event.amount)
   }
 )
@@ -144,7 +144,7 @@ const json = exportJson(report.matched)
 | `expired` | Expected payment was past due |
 | `partial` | Partial payment accumulated, not yet complete |
 
-Duplicate events are handled via idempotency: ingesting the same `(txHash, logIndex)` twice returns the cached result silently.
+Ingesting the same `(txHash, logIndex)` twice returns the cached result.
 
 Register expectations before ingesting events. If a payment arrives before its `expect()` call, it gets `unknown_memo` and the result is cached — re-ingesting won't re-evaluate. To reprocess, clear the store with `reconciler.reset()`.
 
@@ -177,7 +177,7 @@ let memo_raw = encode_memo_v1(&EncodeMemoV1Params {
 ```rust
 use tempo_reconcile::{Reconciler, ReconcilerOptions, ExpectedPayment, PaymentEvent, MatchStatus};
 
-let mut rec = Reconciler::new(ReconcilerOptions::new());
+let mut rec = Reconciler::new(ReconcilerOptions::new()).unwrap();
 rec.expect(ExpectedPayment {
     memo_raw: memo_raw.clone(),
     token: "0x20C0000000000000000000000000000000000000".into(),
@@ -208,6 +208,58 @@ let json = export_json(&report.matched);
 
 See the [Rust API reference](API.md#rust-api-reference) for full documentation and feature flags.
 
+## 6. Nonce management
+
+If you're sending transactions programmatically, use the nonce pool to avoid nonce collisions:
+
+```bash
+npm i @tempo-reconcile/nonces
+```
+
+### Lanes mode (default)
+
+Splits your nonce space into parallel lanes. Each lane handles one in-flight transaction.
+
+```typescript
+import { NoncePool } from '@tempo-reconcile/nonces'
+
+const pool = new NoncePool({
+  address: '0xYourAddress',
+  rpcUrl: 'https://rpc.moderato.tempo.xyz',
+  lanes: 4, // 4 parallel transactions
+})
+await pool.init()
+
+// Reserve a lane
+const slot = pool.acquire('payment-123')
+console.log(slot.nonceKey, slot.nonce)
+
+// After sending the transaction
+pool.submit(slot.nonceKey, '0xTxHash...')
+
+// After block confirmation
+pool.confirm(slot.nonceKey)
+```
+
+### Expiring mode (TIP-1009)
+
+Uses a single slot with `validBefore` timestamps. The transaction expires if not included in time.
+
+```typescript
+const pool = new NoncePool({
+  address: '0xYourAddress',
+  rpcUrl: 'https://rpc.moderato.tempo.xyz',
+  mode: 'expiring',
+  validBeforeOffsetS: 60, // 60-second window
+})
+await pool.init()
+
+const slot = pool.acquire()
+// slot.validBefore is set to now + 60 seconds
+```
+
+Stale reservations are reaped automatically on the next `acquire()` call. You can also call `pool.reap()` manually or `pool.reset()` to re-query all nonce values from the chain.
+
 ## Error handling
 
 **Memo functions** return `null` (TypeScript) or `None` (Rust) for invalid input.
@@ -217,12 +269,14 @@ They never throw.
 `ingest()` always returns a `MatchResult` — it never throws.
 
 **Watcher (HTTP polling)** throws on startup if the RPC URL is unreachable.
-After starting, transient RPC errors are skipped and the poller retries on the
-next cycle. 429 responses respect the `Retry-After` header automatically.
+After starting, transient RPC errors are forwarded to `onError` and the poller
+retries on the next interval. There is no automatic rate-limit handling — if your
+RPC returns 429, handle backoff in your `onError` callback.
 
 **Watcher (WebSocket)** reconnects automatically after disconnections, up to
-`maxReconnects` times (default 5; set to 0 to disable reconnection). After
-exhausting retries the watcher stops silently — check your handle if uptime matters.
+`maxReconnects` times (default 5; set to 0 to disable). After exhausting retries
+`onError` fires with `"max reconnects reached"` and the watcher stops. To restart,
+call the unsubscribe function and create a new watcher.
 
 **Export** functions are pure transforms. They do not throw.
 

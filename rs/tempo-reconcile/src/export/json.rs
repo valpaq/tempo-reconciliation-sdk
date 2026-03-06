@@ -1,3 +1,10 @@
+//! JSON and JSONL export for reconciliation results.
+//!
+//! These functions produce **camelCase** keys (e.g. `chainId`, `blockNumber`,
+//! `memoRaw`) to match the TypeScript SDK output format. This is intentionally
+//! different from the `#[serde(rename_all = "snake_case")]` derives on the
+//! types, which produce `snake_case` when serialized directly via serde.
+
 use crate::types::MatchResult;
 
 /// Serialize a MatchResult to a JSON object (as a serde_json::Value).
@@ -51,8 +58,6 @@ fn result_to_value(r: &MatchResult) -> serde_json::Value {
 /// u128 amounts are serialized as strings to avoid precision loss.
 pub fn export_json(results: &[MatchResult]) -> String {
     let arr: Vec<serde_json::Value> = results.iter().map(result_to_value).collect();
-    // serde_json::to_string_pretty on a serde_json::Value never fails.
-    // Value has no non-serializable types (no cycles, no maps with non-string keys).
     serde_json::to_string_pretty(&arr).unwrap_or_else(|_| "[]".to_string())
 }
 

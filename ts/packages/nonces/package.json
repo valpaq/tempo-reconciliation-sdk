@@ -1,0 +1,57 @@
+{
+  "name": "@tempo-reconcile/nonces",
+  "version": "0.1.0",
+  "description": "Production-grade nonce pool for Tempo 2D nonces (lanes + TIP-1009 expiring)",
+  "type": "module",
+  "license": "MIT",
+  "author": "valpaq",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/valpaq/tempo-reconciliation-sdk.git",
+    "directory": "ts/packages/nonces"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "lint:eslint": "eslint src/ test/",
+    "lint:all": "tsc --noEmit && eslint src/ test/",
+    "prepublishOnly": "pnpm build",
+    "clean": "rm -rf dist",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "peerDependencies": {
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.3.3",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^10.0.2",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.56.1",
+    "viem": "^2.23.0",
+    "vitest": "^4.0.18"
+  }
+}

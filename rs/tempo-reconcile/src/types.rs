@@ -24,6 +24,18 @@ impl MemoType {
             MemoType::Custom => "custom",
         }
     }
+
+    /// Returns the wire byte for this memo type.
+    pub fn type_byte(&self) -> u8 {
+        match self {
+            MemoType::Invoice => 0x01,
+            MemoType::Payroll => 0x02,
+            MemoType::Refund => 0x03,
+            MemoType::Batch => 0x04,
+            MemoType::Subscription => 0x05,
+            MemoType::Custom => 0x0F,
+        }
+    }
 }
 
 impl std::fmt::Display for MemoType {
@@ -63,7 +75,7 @@ pub enum Memo {
 }
 
 /// A TIP-20 transfer event observed on-chain.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PaymentEvent {
     pub chain_id: u32,
@@ -88,7 +100,7 @@ pub struct PaymentEvent {
 }
 
 /// An expected payment registered with the Reconciler.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ExpectedPayment {
     /// Primary key — bytes32 memo hex ("0x" + 64 hex chars).
@@ -152,7 +164,7 @@ impl std::fmt::Display for MatchStatus {
 }
 
 /// Result of processing one PaymentEvent through the Reconciler.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MatchResult {
     pub status: MatchStatus,
@@ -170,7 +182,7 @@ pub struct MatchResult {
 }
 
 /// Full reconciliation report.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReconcileReport {
     pub matched: Vec<MatchResult>,
@@ -180,7 +192,7 @@ pub struct ReconcileReport {
 }
 
 /// Aggregate statistics for a ReconcileReport.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReconcileSummary {
     pub total_expected: usize,

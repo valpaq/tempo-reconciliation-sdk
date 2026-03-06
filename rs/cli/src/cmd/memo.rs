@@ -18,14 +18,7 @@ pub enum CliMemoType {
 
 impl CliMemoType {
     fn as_str(&self) -> &'static str {
-        match self {
-            CliMemoType::Invoice => "invoice",
-            CliMemoType::Payroll => "payroll",
-            CliMemoType::Refund => "refund",
-            CliMemoType::Batch => "batch",
-            CliMemoType::Subscription => "subscription",
-            CliMemoType::Custom => "custom",
-        }
+        MemoType::from(self.clone()).as_str()
     }
 }
 
@@ -167,7 +160,7 @@ fn decode_output(args: &DecodeArgs, json: bool) -> Result<String> {
         Ok(format!(
             "Type:       {} (0x{:02x})\nIssuerTag:  0x{:016x}\nULID:       {}\nSalt:       {}",
             memo.t.as_str(),
-            memo_type_byte(&memo.t),
+            memo.t.type_byte(),
             memo.issuer_tag,
             memo.ulid,
             hex::encode(memo.salt),
@@ -235,17 +228,6 @@ pub fn run_issuer_tag(args: &IssuerTagArgs, json: bool) -> Result<()> {
         println!("0x{:016x} ({tag})", tag);
     }
     Ok(())
-}
-
-fn memo_type_byte(t: &MemoType) -> u8 {
-    match t {
-        MemoType::Invoice => 0x01,
-        MemoType::Payroll => 0x02,
-        MemoType::Refund => 0x03,
-        MemoType::Batch => 0x04,
-        MemoType::Subscription => 0x05,
-        MemoType::Custom => 0x0F,
-    }
 }
 
 fn parse_salt_opt(salt_hex: Option<&str>) -> Result<Option<[u8; 7]>> {

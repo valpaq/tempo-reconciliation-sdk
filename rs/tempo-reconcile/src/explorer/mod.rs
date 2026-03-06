@@ -210,11 +210,20 @@ impl ExplorerClient {
             .await
             .map_err(|e| ExplorerError::Parse(e.to_string()))?;
 
+        let chain_id = v["chainId"].as_u64().unwrap_or(0) as u32;
+        let account_type = v["accountType"]
+            .as_str()
+            .ok_or_else(|| ExplorerError::Parse("missing or invalid field: accountType".into()))?
+            .to_string();
+        let tx_count = v["txCount"]
+            .as_u64()
+            .ok_or_else(|| ExplorerError::Parse("missing or invalid field: txCount".into()))?;
+
         Ok(AddressMetadata {
             address: address.to_lowercase(),
-            chain_id: v["chainId"].as_u64().unwrap_or(0) as u32,
-            account_type: v["accountType"].as_str().unwrap_or("eoa").to_string(),
-            tx_count: v["txCount"].as_u64().unwrap_or(0),
+            chain_id,
+            account_type,
+            tx_count,
             last_activity_timestamp: v["lastActivityTimestamp"].as_u64().unwrap_or(0),
             created_timestamp: v["createdTimestamp"].as_u64().unwrap_or(0),
             created_tx_hash: v["createdTxHash"].as_str().map(str::to_string),

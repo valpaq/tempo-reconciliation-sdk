@@ -26,7 +26,7 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: javascript-typescript
-          source-root: ts/src
+          source-root: ts/packages
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3

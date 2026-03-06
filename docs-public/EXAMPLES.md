@@ -451,7 +451,7 @@ import { sign } from '@tempo-reconcile/sdk'
 
 // On your webhook endpoint, verify the signature:
 const payload = JSON.stringify(requestBody)
-const expected = sign(payload, process.env.WEBHOOK_SECRET!)
+const expected = await sign(payload, process.env.WEBHOOK_SECRET!)
 const received = request.headers['x-tempo-reconcile-signature']
 
 if (expected !== received) {

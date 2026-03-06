@@ -201,6 +201,15 @@ fn is_memo_v1_valid() {
 }
 
 #[test]
+fn text_memo_left_padded() {
+    // "hello" is 5 bytes, left-padded with 27 zero bytes
+    let mut buf = [0u8; 32];
+    buf[27..].copy_from_slice(b"hello");
+    let raw = format!("0x{}", hex::encode(buf));
+    assert_eq!(decode_memo_text(&raw).unwrap(), "hello");
+}
+
+#[test]
 fn decodes_mixed_case_hex() {
     let raw = make_memo(MemoType::Invoice);
     // Convert to mixed case: uppercase every other hex char after "0x"
@@ -227,4 +236,14 @@ fn decodes_mixed_case_hex() {
     assert_eq!(d.ulid, VALID_ULID);
     // raw field should be normalized to lowercase
     assert_eq!(d.raw, raw);
+}
+
+#[test]
+fn all_control_characters_not_decoded_as_v1() {
+    // 32 bytes of 0x0a (newline) should not decode as a valid MemoV1
+    let raw = format!("0x{}", "0a".repeat(32));
+    assert!(
+        decode_memo_v1(&raw).is_none(),
+        "all-0x0a memo must not decode as valid MemoV1"
+    );
 }

@@ -57,17 +57,29 @@ pub fn ulid_to_bytes16(ulid: &str) -> Result<[u8; 16], crate::MemoError> {
         )));
     }
 
-    // Accumulate 26 × 5 = 130 bits into a u128 (we only use the low 128 bits;
-    // the top 2 bits of the 130-bit value must be zero for a valid ULID).
-    let mut bits: u128 = 0;
+    // Convert chars to 5-bit indices.
+    let mut indices = [0u8; 26];
     for (i, &ch) in chars.iter().enumerate() {
-        let val = crockford_decode(ch).ok_or_else(|| {
+        indices[i] = crockford_decode(ch).ok_or_else(|| {
             crate::MemoError::InvalidUlid(format!(
                 "Invalid Crockford character '{}' at position {}",
                 ch, i
             ))
         })?;
-        bits = (bits << 5) | val as u128;
+    }
+
+    // First char must be 0-7 to fit in 128 bits
+    if indices[0] > 7 {
+        return Err(crate::MemoError::InvalidUlid(
+            "first character must be 0-7 (128-bit overflow)".into(),
+        ));
+    }
+
+    // Accumulate 26 x 5 = 130 bits into a u128 (the top 2 bits are guaranteed
+    // zero by the indices[0] <= 7 check above).
+    let mut bits: u128 = 0;
+    for &idx in &indices {
+        bits = (bits << 5) | idx as u128;
     }
 
     let mut id16 = [0u8; 16];
@@ -94,7 +106,5 @@ pub fn bytes16_to_ulid(id16: &[u8; 16]) -> String {
         bits >>= 5;
     }
 
-    // Every byte is an index into ALPHABET which contains only ASCII characters,
-    // so the lossy conversion never replaces anything.
-    String::from_utf8_lossy(&chars).into_owned()
+    String::from_utf8(chars.to_vec()).expect("ALPHABET is ASCII")
 }

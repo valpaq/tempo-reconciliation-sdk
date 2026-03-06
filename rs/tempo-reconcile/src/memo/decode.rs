@@ -1,4 +1,6 @@
-use super::constants::{type_code_to_memo_type, ID16_OFFSET, ISSUER_TAG_OFFSET, SALT_OFFSET};
+use super::constants::{
+    type_code_to_memo_type, ID16_OFFSET, ID16_SIZE, ISSUER_TAG_OFFSET, SALT_OFFSET,
+};
 use super::ulid::bytes16_to_ulid;
 use crate::types::{Memo, MemoV1};
 
@@ -33,7 +35,9 @@ pub fn decode_memo_v1(memo_raw: &str) -> Option<MemoV1> {
             .ok()?,
     );
 
-    let id16: [u8; 16] = bytes[ID16_OFFSET..ID16_OFFSET + 16].try_into().ok()?;
+    let id16: [u8; ID16_SIZE] = bytes[ID16_OFFSET..ID16_OFFSET + ID16_SIZE]
+        .try_into()
+        .ok()?;
 
     // bytes16_to_ulid never errors; it always produces a 26-char string.
     let ulid = bytes16_to_ulid(&id16);

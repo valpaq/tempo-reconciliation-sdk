@@ -51,10 +51,8 @@ pub fn encode_memo_v1(params: &EncodeMemoV1Params) -> Result<String, MemoError> 
 
     buf[0] = memo_type_to_code(&params.memo_type);
 
-    let tag = params.issuer_tag;
-    for i in 0..ISSUER_TAG_SIZE {
-        buf[ISSUER_TAG_OFFSET + i] = (tag >> (56 - i * 8)) as u8;
-    }
+    buf[ISSUER_TAG_OFFSET..ISSUER_TAG_OFFSET + ISSUER_TAG_SIZE]
+        .copy_from_slice(&params.issuer_tag.to_be_bytes());
 
     buf[ID16_OFFSET..ID16_OFFSET + 16].copy_from_slice(&id16);
     buf[SALT_OFFSET..SALT_OFFSET + SALT_SIZE].copy_from_slice(&salt);

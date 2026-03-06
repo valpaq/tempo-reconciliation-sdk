@@ -19,6 +19,8 @@ pub struct WebhookConfig {
     /// Maximum results per HTTP POST. Default: 50.
     pub batch_size: usize,
     /// Maximum number of retries on transient failures. Default: 3.
+    ///
+    /// Note: `max_retries` means total attempts = 1 + max_retries (initial attempt + retries).
     pub max_retries: u32,
     /// Per-request timeout in seconds. Default: 30.
     pub timeout_secs: u64,
@@ -147,13 +149,15 @@ fn current_ts() -> u64 {
 
 /// Stable fingerprint derived from batch content: keccak256("txHash:logIndex|...") as hex.
 /// Identical across process restarts for the same set of events — used as idempotency key.
+/// Parts are sorted before hashing so the fingerprint is order-independent.
 fn batch_fingerprint(results: &[MatchResult]) -> String {
     use sha3::{Digest, Keccak256};
-    let fp: String = results
+    let mut parts: Vec<String> = results
         .iter()
         .map(|r| format!("{}:{}", r.payment.tx_hash, r.payment.log_index))
-        .collect::<Vec<_>>()
-        .join("|");
+        .collect();
+    parts.sort();
+    let fp = parts.join("|");
     hex::encode(Keccak256::digest(fp.as_bytes()))
 }
 
@@ -225,6 +229,9 @@ async fn deliver(
     // Jitter is applied to the sleep but does NOT affect the base progression.
     let mut base_delay = 1u64;
     let mut attempt = 0u32;
+    // Convert body to bytes once; reqwest takes ownership of the body per request,
+    // so we clone the Vec<u8> on each retry rather than re-allocating a String.
+    let body_bytes = body.as_bytes().to_vec();
 
     loop {
         let is_last = attempt >= config.max_retries;
@@ -244,7 +251,7 @@ async fn deliver(
             }
         }
 
-        match req.body(body.to_string()).send().await {
+        match req.body(body_bytes.clone()).send().await {
             Ok(resp) => {
                 let status = resp.status();
                 if status.is_success() {

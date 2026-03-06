@@ -2,7 +2,7 @@ use crate::types::{ExpectedPayment, MatchResult};
 use crate::ReconcileError;
 use std::collections::HashMap;
 
-/// Pluggable storage backend for the Reconciler.
+/// Storage backend for the reconciler.
 ///
 /// Implement this trait to use a custom persistence layer (Postgres, Redis, SQLite, etc.).
 /// The default implementation is [`InMemoryStore`].

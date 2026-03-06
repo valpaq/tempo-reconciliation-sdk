@@ -1,0 +1,107 @@
+{
+  "name": "@tempo-reconcile/sdk",
+  "version": "0.1.0",
+  "description": "TIP-20 payment reconciliation SDK for Tempo blockchain",
+  "type": "module",
+  "license": "MIT",
+  "author": "valpaq",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/valpaq/tempo-reconciliation-sdk.git",
+    "directory": "ts/packages/sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/valpaq/tempo-reconciliation-sdk/issues"
+  },
+  "homepage": "https://github.com/valpaq/tempo-reconciliation-sdk#readme",
+  "keywords": [
+    "tempo",
+    "blockchain",
+    "payments",
+    "reconciliation",
+    "tip20",
+    "memo",
+    "sdk",
+    "viem"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./memo": {
+      "types": "./dist/memo.d.ts",
+      "import": "./dist/memo.js",
+      "require": "./dist/memo.cjs"
+    },
+    "./watcher": {
+      "types": "./dist/watcher.d.ts",
+      "import": "./dist/watcher.js",
+      "require": "./dist/watcher.cjs"
+    },
+    "./reconciler": {
+      "types": "./dist/reconciler.d.ts",
+      "import": "./dist/reconciler.js",
+      "require": "./dist/reconciler.cjs"
+    },
+    "./export": {
+      "types": "./dist/export.d.ts",
+      "import": "./dist/export.js",
+      "require": "./dist/export.cjs"
+    },
+    "./explorer": {
+      "types": "./dist/explorer.d.ts",
+      "import": "./dist/explorer.js",
+      "require": "./dist/explorer.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "lint:eslint": "eslint src/ test/",
+    "lint:all": "tsc --noEmit && eslint src/ test/",
+    "prepublishOnly": "pnpm build",
+    "clean": "rm -rf dist",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "e2e": "node --env-file=../../.env --import tsx examples/e2e-integration.ts"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.0.1"
+  },
+  "peerDependencies": {
+    "viem": "^2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "viem": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^25.3.3",
+    "@vitest/coverage-v8": "^4.0.18",
+    "eslint": "^10.0.2",
+    "prettier": "^3.2.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0",
+    "typescript-eslint": "^8.56.1",
+    "viem": "^2.23.0",
+    "vitest": "^4.0.18"
+  }
+}

@@ -101,16 +101,19 @@ where
     Ok(super::watch::WatchHandle::new(stop_tx, handle))
 }
 
-async fn run_session<F>(
+type WsSink = futures_util::stream::SplitSink<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    Message,
+>;
+type WsStream = futures_util::stream::SplitStream<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+>;
+
+/// Connect, send eth_subscribe, and return (write, read, subscription_id).
+async fn subscribe_handshake(
     config: &WatchWsConfig,
-    on_events: &F,
-    cache: &mut DedupCache,
-    stop_rx: &mut watch::Receiver<bool>,
-) -> Result<(), WatcherError>
-where
-    F: Fn(Vec<PaymentEvent>) + Send + Sync + 'static,
-{
-    use super::watch::{event_sig, transfer_event_sig};
+) -> Result<(WsSink, WsStream, String), WatcherError> {
+    use super::watch::{build_address_topics, event_sig, transfer_event_sig};
 
     let (ws_stream, _) = connect_async(&config.ws_url)
         .await
@@ -118,32 +121,14 @@ where
 
     let (mut write, mut read) = ws_stream.split();
 
-    // Build log filter for eth_subscribe
     let sig = event_sig();
     let topic0: Value = if config.include_transfer_only {
         json!([sig, transfer_event_sig()])
     } else {
-        Value::String(sig)
+        Value::String(sig.to_string())
     };
     let mut topics: Vec<Value> = vec![topic0];
-    if config.from.is_some() || config.to.is_some() {
-        // topics[1] = from address (padded) or null for any
-        topics.push(match &config.from {
-            Some(addr) => Value::String(format!(
-                "0x{:0>64}",
-                addr.strip_prefix("0x").unwrap_or(addr.as_str())
-            )),
-            None => Value::Null,
-        });
-        // topics[2] = to address (only when to filter is set)
-        if let Some(ref addr) = config.to {
-            let padded = format!(
-                "0x{:0>64}",
-                addr.strip_prefix("0x").unwrap_or(addr.as_str())
-            );
-            topics.push(Value::String(padded));
-        }
-    }
+    build_address_topics(&config.from, &config.to, &mut topics);
 
     let sub_req = json!({
         "jsonrpc": "2.0",
@@ -160,7 +145,6 @@ where
         .await
         .map_err(|e| WatcherError::Ws(e.to_string()))?;
 
-    // Read subscription ID with timeout
     let sub_id: String = timeout(Duration::from_millis(config.read_timeout_ms), async {
         loop {
             match read.next().await {
@@ -191,7 +175,20 @@ where
     .await
     .map_err(|_| WatcherError::Ws("subscribe timeout".into()))??;
 
-    // Main event loop
+    Ok((write, read, sub_id))
+}
+
+async fn run_session<F>(
+    config: &WatchWsConfig,
+    on_events: &F,
+    cache: &mut DedupCache,
+    stop_rx: &mut watch::Receiver<bool>,
+) -> Result<(), WatcherError>
+where
+    F: Fn(Vec<PaymentEvent>) + Send + Sync + 'static,
+{
+    let (mut write, mut read, sub_id) = subscribe_handshake(config).await?;
+
     loop {
         tokio::select! {
             _ = stop_rx.changed() => {

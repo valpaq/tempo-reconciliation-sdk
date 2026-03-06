@@ -5,10 +5,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](../../LICENSE)
 
 Reconciliation library for TIP-20 payments on Tempo. Implements the
-[TEMPO-RECONCILE-MEMO-001](../../spec/MEMO-SPEC.md) bytes32 memo standard.
+[TEMPO-RECONCILE-MEMO-001](../../docs-public/MEMO-SPEC.md) bytes32 memo standard.
 
-Does not overlap with the official Tempo SDK — no wallet, no signing, no RPC.
-This is the **receiving side**: decode memos, match payments to invoices, export results.
+Does not overlap with the official Tempo SDK — no wallet, no signing.
+This is the **receiving side**: decode memos, watch transfers, match payments, export results.
 
 ## Install
 
@@ -26,6 +26,8 @@ tempo-reconcile = "0.1"
 | `export` | no | serde_json | `export_csv`, `export_json`, `export_jsonl` |
 | `watcher` | no | tokio, reqwest | `get_tip20_transfer_history`, `watch_tip20_transfers` |
 | `webhook` | no | hmac, sha2 (+ watcher, rand) | `send_webhook` — HMAC-SHA256, batching, retries; `sign` — raw HMAC-SHA256 hex |
+| `watcher-ws` | no | tokio-tungstenite (+ watcher) | WebSocket push watcher with auto-reconnect |
+| `explorer` | no | reqwest, tokio, serde, serde_json | Tempo Explorer REST client: metadata, balances, history |
 | `full` | no | all of the above | Everything |
 
 Default features are intentionally empty — core (memo + reconciler) has zero heavyweight deps.
@@ -51,7 +53,7 @@ let memo = encode_memo_v1(&EncodeMemoV1Params {
 // memo == "0x01..." (66-char hex, "0x" + 64 hex digits)
 
 // 3. Register the expected payment.
-let mut reconciler = Reconciler::new(ReconcilerOptions::new());
+let mut reconciler = Reconciler::new(ReconcilerOptions::new()).unwrap();
 reconciler.expect(ExpectedPayment {
     memo_raw: memo.clone(),
     token: "0x20c0000000000000000000000000000000000000".to_string(), // pathUSD
@@ -163,7 +165,7 @@ by calling your client and passing the raw log values to `watcher::decode::decod
 
 ## Links
 
-- [Memo spec](../../spec/MEMO-SPEC.md)
+- [Memo spec](../../docs-public/MEMO-SPEC.md)
 - [Test vectors](../../spec/vectors.json)
 - [TypeScript SDK](../../ts/)
 - [Main README](../../README.md)

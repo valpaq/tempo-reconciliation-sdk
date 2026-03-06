@@ -233,6 +233,8 @@ const reconciler = new Reconciler({
 | `partialToleranceMode` | `'final' \| 'each'` | `'final'` | How tolerance interacts with partial payments |
 | `store` | `ReconcileStore` | `InMemoryStore` | Persistence backend |
 
+**Tolerance modes:** In `"final"` mode, partial payments accumulate and tolerance applies to the cumulative total. In `"each"` mode, there is no accumulation — each payment must independently match within tolerance. The `partial` status is only emitted in `"final"` mode.
+
 ### `reconciler.expect(payment)`
 
 Register an expected payment. `memoRaw` is the primary key.
@@ -256,6 +258,8 @@ Throws if memoRaw is already registered.
 Process one incoming PaymentEvent. Returns a MatchResult.
 
 Idempotent: ingesting the same event twice returns the cached result.
+
+**Note:** If an event arrives before its `expect()` call, it is cached as `unknown_memo`. Re-ingesting after `expect()` returns the cached result, not a re-evaluation. Use `reconciler.reset()` to clear and reprocess.
 
 ### `reconciler.ingestMany(events): MatchResult[]`
 
@@ -282,6 +286,8 @@ Clear everything. Start fresh.
 ---
 
 ## export
+
+> **Dependency note:** The `export` module uses the Web Crypto API (`crypto.subtle`) for computing webhook idempotency keys (SHA-256) and HMAC signatures. No additional dependencies required — `crypto.subtle` is available in Node.js 20+, Deno, and Cloudflare Workers.
 
 ### `exportCsv(results: MatchResult[]): string`
 
@@ -316,7 +322,7 @@ const result = await sendWebhook({
   batchSize: 50,           // default 50
   maxRetries: 3,           // default 3
   timeoutMs: 30_000,       // default 30s, per-batch request timeout
-  fetch: customFetch,      // optional, for Node <18 or testing
+  fetch: customFetch,      // optional, for testing or custom environments
   onBatchError: (err) => console.error(err.error, err.statusCode),
 })
 
@@ -327,14 +333,14 @@ result.errors  // WebhookBatchError[] — failed batch details
 
 `WebhookBatchError` has the original `results` for the failed batch, plus optional `statusCode` and `error` string.
 
-### `sign(payload, secret): string`
+### `sign(payload, secret): Promise<string>`
 
-Compute HMAC-SHA256 signature for webhook payload verification. Useful for building custom webhook consumers that verify incoming requests.
+Compute HMAC-SHA256 signature for webhook payload verification. Uses the Web Crypto API (`globalThis.crypto.subtle`), available in Node.js 20+, Deno, Cloudflare Workers, and modern browsers.
 
 ```typescript
 import { sign } from '@tempo-reconcile/sdk'
 
-const signature = sign(requestBody, 'whsec_...')
+const signature = await sign(requestBody, 'whsec_...')
 if (signature !== request.headers['x-tempo-reconcile-signature']) {
   throw new Error('Invalid signature')
 }
@@ -352,7 +358,7 @@ Headers sent on every request:
 | Header | Value |
 |--------|-------|
 | `X-Tempo-Reconcile-Timestamp` | Unix seconds at batch creation time |
-| `X-Tempo-Reconcile-Idempotency-Key` | keccak256(body) hex — stable across retries for the same batch |
+| `X-Tempo-Reconcile-Idempotency-Key` | SHA-256(body) hex — stable across retries for the same batch |
 | `X-Tempo-Reconcile-Signature` | HMAC-SHA256(body, secret) hex — only present when `secret` is set |
 
 Body shape:
@@ -365,13 +371,13 @@ Body shape:
     {
       "status": "matched",
       "payment": {
-        "chainId": 42431, "blockNumber": 100, "txHash": "0x...", "logIndex": 0,
+        "chainId": 42431, "blockNumber": "100", "txHash": "0x...", "logIndex": 0,
         "token": "0x20c0...", "from": "0xsender", "to": "0xrecipient",
-        "amount": "10000000", "memoRaw": "0x01...", "timestamp": 1709123456
+        "amount": "10000000", "memoRaw": "0x01..."
       },
       "expected": {
-        "memoRaw": "0x01...", "token": "0x20c0...", "to": "0xrecipient",
-        "amount": "10000000", "from": null, "dueAt": null, "meta": null
+        "amount": "10000000",
+        "meta": { "invoiceId": "INV-001" }
       },
       "reason": null,
       "overpaidBy": null,
@@ -463,30 +469,30 @@ const reconciler = new Reconciler({ store })
 
 ### Custom store (database)
 
-For production, implement `ReconcileStore` backed by a database. All methods must be synchronous or return a Promise. The interface is small — 10 methods total.
+For production, implement `ReconcileStore` backed by a database. **All methods must be synchronous** — the Reconciler calls them without `await`. The interface is small: 10 methods.
 
 ```typescript
 import type { ReconcileStore, ExpectedPayment, MatchResult } from '@tempo-reconcile/sdk'
 
-class PostgresStore implements ReconcileStore {
-  constructor(private db: YourDbClient) {}
+class SqliteStore implements ReconcileStore {
+  constructor(private db: YourSyncDbClient) {}
 
-  async addExpected(payment: ExpectedPayment): Promise<void> {
-    await this.db.query(
-      'INSERT INTO expected_payments (memo_raw, data) VALUES ($1, $2)',
+  addExpected(payment: ExpectedPayment): void {
+    this.db.run(
+      'INSERT INTO expected_payments (memo_raw, data) VALUES (?, ?)',
       [payment.memoRaw, JSON.stringify(payment, (_, v) => typeof v === 'bigint' ? v.toString() : v)]
     )
   }
 
-  async getExpected(memoRaw: `0x${string}`): Promise<ExpectedPayment | undefined> {
-    const row = await this.db.query('SELECT data FROM expected_payments WHERE memo_raw = $1', [memoRaw])
+  getExpected(memoRaw: `0x${string}`): ExpectedPayment | undefined {
+    const row = this.db.get('SELECT data FROM expected_payments WHERE memo_raw = ?', [memoRaw])
     return row ? JSON.parse(row.data) : undefined
   }
 
   // ... implement remaining methods
 }
 
-const reconciler = new Reconciler({ store: new PostgresStore(db) })
+const reconciler = new Reconciler({ store: new SqliteStore(db) })
 ```
 
 **Notes:**
@@ -577,7 +583,7 @@ type ReconcileSummary = {
 // Options types (documented inline above in each function section)
 type EncodeMemoV1Params = { type: MemoType; issuerTag: bigint; ulid: string; salt?: Uint8Array | 'random' }
 type WatchOptions = { rpcUrl: string; chainId: number; token: `0x${string}`; to?: `0x${string}`; from?: `0x${string}`; startBlock?: bigint; pollIntervalMs?: number; dedupeTtlMs?: number; includeTransferOnly?: boolean; onError?: (err: Error) => void }
-type HistoryOptions = WatchOptions & { fromBlock: bigint; toBlock?: bigint; batchSize?: number }
+type HistoryOptions = { rpcUrl: string; chainId: number; token: `0x${string}`; to?: `0x${string}`; from?: `0x${string}`; includeTransferOnly?: boolean; onError?: (err: Error) => void; fromBlock: bigint; toBlock?: bigint; batchSize?: number }
 type WatchWsOptions = { wsUrl: string; chainId: number; token: `0x${string}`; to?: `0x${string}`; from?: `0x${string}`; includeTransferOnly?: boolean; dedupeTtlMs?: number; onError?: (err: Error) => void; maxReconnects?: number; reconnectDelayMs?: number }
 type ReconcilerOptions = { store?: ReconcileStore; issuerTag?: bigint; strictSender?: boolean; allowOverpayment?: boolean; rejectExpired?: boolean; amountToleranceBps?: number; allowPartial?: boolean; partialToleranceMode?: 'final' | 'each' }
 type WebhookOptions = { url: string; results: MatchResult[]; secret?: string; batchSize?: number; maxRetries?: number; timeoutMs?: number; fetch?: typeof globalThis.fetch; onBatchError?: (err: WebhookBatchError) => void }
@@ -762,16 +768,262 @@ Websocket variant (feature `watcher-ws`): `watch_tip20_transfers_ws(config: Watc
 | `KnownEventPartValue` | `Text(String)` or `Amount { token, value, decimals, symbol }` |
 | `ExplorerError` | Error type: `NotFound(String)`, `Http(u16)`, `Network(String)`, `Parse(String)`. |
 
+### Rust nonces crate (`tempo-reconcile-nonces`)
+
+```toml
+[dependencies]
+tempo-reconcile-nonces = "0.1"
+```
+
+Uses [alloy](https://docs.rs/alloy) for RPC and types (`Address`, `U256`, `FixedBytes<32>`).
+
+#### `NoncePool`
+
+```rust
+use tempo_reconcile_nonces::{NoncePool, NoncePoolOptions, NonceMode};
+use alloy::primitives::address;
+
+let mut pool = NoncePool::new(NoncePoolOptions {
+    address: address!("1234567890abcdef1234567890abcdef12345678"),
+    rpc_url: "https://rpc.moderato.tempo.xyz".into(),
+    lanes: 4,
+    mode: NonceMode::Lanes,
+    ..Default::default()
+})?;
+pool.init().await?;
+```
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `new` | `(opts: NoncePoolOptions) -> Result<Self, NonceError>` | Create a pool. Validates options. |
+| `chain_id` | `(&self) -> u64` | Configured chain ID. |
+| `init` | `(&mut self) -> Result<(), NonceError>` | Query on-chain nonces, populate slots. Must call before `acquire()`. |
+| `acquire` | `(&mut self, request_id: Option<&str>) -> Result<&NonceSlot, NonceError>` | Reserve next free slot. Auto-reaps stale slots first. Idempotent on `request_id`. |
+| `submit` | `(&mut self, nonce_key: U256, tx_hash: FixedBytes<32>) -> Result<(), NonceError>` | Mark reserved slot as submitted. |
+| `confirm` | `(&mut self, nonce_key: U256) -> Result<(), NonceError>` | Confirm submitted slot. Increments nonce, resets to free. |
+| `fail` | `(&mut self, nonce_key: U256) -> Result<(), NonceError>` | Fail a submitted or reserved slot. Resets to free, same nonce (not consumed). |
+| `release` | `(&mut self, nonce_key: U256) -> Result<(), NonceError>` | Release slot back to free regardless of state. |
+| `reap` | `(&mut self) -> Vec<NonceSlot>` | Reclaim slots past `reservation_ttl_ms`. Called automatically by `acquire()`. |
+| `slots` | `(&self) -> &[NonceSlot]` | Immutable view of all slots. |
+| `stats` | `(&self) -> NoncePoolStats` | Aggregate counts by state. |
+| `reset` | `(&mut self) -> Result<(), NonceError>` | Re-query all on-chain nonces, reset all slots to free. |
+
+#### `NoncePoolOptions`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `address` | `Address` | required | Sender account address |
+| `rpc_url` | `String` | required | RPC endpoint URL |
+| `lanes` | `u32` | `4` | Parallel lanes (lanes mode only) |
+| `mode` | `NonceMode` | `Lanes` | `Lanes` or `Expiring` |
+| `reservation_ttl_ms` | `u64` | `30_000` | Auto-expire stale reservations (ms) |
+| `valid_before_offset_s` | `u64` | `30` | Expiring mode: `validBefore = now + offset` (seconds) |
+| `chain_id` | `u64` | `42431` | Chain ID (Moderato testnet) |
+| `validate_chain_id` | `bool` | `false` | Validate chain ID against RPC at init |
+
+#### `NonceSlot`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `nonce_key` | `U256` | Lane key (1..N for lanes, `U256::MAX` for expiring) |
+| `nonce` | `u64` | Current sequence value |
+| `state` | `SlotState` | `Free`, `Reserved`, `Submitted` |
+| `reserved_at` | `Option<Instant>` | When reserved |
+| `submitted_at` | `Option<Instant>` | When submitted |
+| `tx_hash` | `Option<FixedBytes<32>>` | Transaction hash once submitted |
+| `request_id` | `Option<String>` | Caller-provided idempotency key |
+| `valid_before` | `Option<u64>` | Unix seconds — tx must be included before this (expiring mode) |
+
+#### `NoncePoolStats`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total` | `usize` | Total managed slots |
+| `free` | `usize` | Available slots |
+| `reserved` | `usize` | Reserved but not submitted |
+| `submitted` | `usize` | Pending on-chain confirmation |
+| `confirmed` | `u64` | Cumulative confirmed count |
+| `failed` | `u64` | Cumulative failed count |
+| `expired` | `u64` | Cumulative reaped/expired count |
+
+#### Enums
+
+```rust
+pub enum NonceMode { Lanes, Expiring }
+pub enum SlotState { Free, Reserved, Submitted }
+```
+
+#### RPC helpers
+
+| Function | Description |
+|----------|-------------|
+| `get_nonce_from_precompile<P: Provider>(provider, address, key) -> Result<u64, NonceError>` | Query nonce precompile for a specific (address, key) pair. |
+| `get_protocol_nonce<P: Provider>(provider, address) -> Result<u64, NonceError>` | Query protocol nonce via `get_transaction_count`. |
+
+#### Constants
+
+| Name | Type | Value | Description |
+|------|------|-------|-------------|
+| `NONCE_PRECOMPILE` | `Address` | `0x4e4F4E4345...` | Tempo nonce precompile |
+| `MAX_U256` | `U256` | `2^256 - 1` | Nonce key for expiring mode |
+| `MODERATO_CHAIN_ID` | `u64` | `42431` | Moderato testnet chain ID |
+| `DEFAULT_LANES` | `u32` | `4` | Default parallel lanes |
+| `DEFAULT_RESERVATION_TTL_MS` | `u64` | `30_000` | Default reservation TTL (ms) |
+| `DEFAULT_VALID_BEFORE_OFFSET_S` | `u64` | `30` | Default validBefore offset (s) |
+
+#### `NonceError`
+
+| Variant | Description |
+|---------|-------------|
+| `MissingAddress` | Address is required |
+| `MissingRpcUrl` | RPC URL is required |
+| `InvalidLanes` | Lanes must be >= 1 |
+| `InvalidTtl` | Reservation TTL must be > 0 |
+| `InvalidValidBefore` | validBefore offset must be > 0 |
+| `NotInitialized` | Pool not initialized — call `init()` first |
+| `AlreadyInitialized` | Already initialized — call `reset()` to re-sync |
+| `Exhausted` | No free slots available |
+| `SlotNotFound(U256)` | Slot not found for given nonce key |
+| `InvalidState { .. }` | Slot in wrong state for the operation |
+| `ChainIdMismatch { .. }` | Configured chain ID != RPC chain ID |
+| `Rpc(alloy::contract::Error)` | Underlying RPC/transport error |
+
+---
+
+## `@tempo-reconcile/nonces`
+
+Nonce pool for Tempo's 2D nonce system. Manages parallel transaction lanes and expiring nonces (TIP-1009).
+
+```bash
+npm i @tempo-reconcile/nonces
+```
+
+### `NoncePool`
+
+```typescript
+import { NoncePool } from '@tempo-reconcile/nonces'
+```
+
+#### `constructor(options: NoncePoolOptions)`
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `address` | `` `0x${string}` `` | required | Sender account address |
+| `rpcUrl` | `string` | required | RPC endpoint URL |
+| `mode` | `"lanes" \| "expiring"` | `"lanes"` | Concurrency strategy |
+| `lanes` | `number` | `4` | Number of parallel lanes (lanes mode only) |
+| `reservationTtlMs` | `number` | `30000` | Auto-expire stale reservations after this duration (ms) |
+| `validBeforeOffsetS` | `number` | `30` | Expiring mode: `validBefore = now + offset` (seconds). Must be > 0. |
+| `chainId` | `number` | `42431` | Chain ID (Moderato testnet) |
+| `validateChainId` | `boolean` | `false` | If `true`, `init()` calls `eth_chainId` and throws if the RPC chain ID does not match `chainId`. Disabled by default to avoid an extra round-trip when the endpoint is known-correct. |
+
+Throws if `address` or `rpcUrl` is empty, `lanes < 1`, `reservationTtlMs <= 0`, or `validBeforeOffsetS <= 0`.
+
+#### `init(): Promise<void>`
+
+Query on-chain nonce values and populate slots. Must be called before `acquire()`.
+
+#### `acquire(requestId?: string): NonceSlot`
+
+Reserve the next free slot. Auto-reaps stale reservations before declaring exhaustion.
+
+If `requestId` is provided and a reserved or submitted slot with the same ID exists, returns it (idempotent). After confirm/fail/reap, a new slot is allocated for the same `requestId`.
+
+Throws `"NoncePool: no free slots available"` if no free slots.
+
+#### `submit(nonceKey: bigint, txHash: \`0x${string}\`): void`
+
+Mark a reserved slot as submitted. Throws if slot is not in `"reserved"` state.
+
+#### `confirm(nonceKey: bigint): void`
+
+Mark a submitted slot as confirmed. In lanes mode, increments the nonce and resets the slot to `"free"`. In expiring mode, resets the slot without incrementing (call `reset()` to re-query the on-chain nonce before the next `acquire()`). Throws if slot is not in `"submitted"` state.
+
+#### `fail(nonceKey: bigint): void`
+
+Mark a submitted or reserved slot as failed. Resets to `"free"` with the same nonce value (nonce was not consumed on-chain). Throws if slot is not in `"submitted"` or `"reserved"` state.
+
+#### `release(nonceKey: bigint): void`
+
+Release a slot back to `"free"` regardless of current state.
+
+#### `reap(): NonceSlot[]`
+
+Reclaim slots that have exceeded `reservationTtlMs`. Called automatically at the start of `acquire()`. Returns the reaped slots.
+
+#### `reset(): Promise<void>`
+
+Re-query all on-chain nonce values and reset all slots to `"free"`.
+
+#### `getSlots(): readonly NonceSlot[]`
+
+Readonly view of all slots.
+
+#### `getStats(): NoncePoolStats`
+
+Aggregate counts by state: `total`, `free`, `reserved`, `submitted`, `confirmed`, `failed`, `expired`.
+
+### `NonceSlot`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `nonceKey` | `bigint` | Lane key (1..N for lanes, maxUint256 for expiring) |
+| `nonce` | `bigint` | Current sequence value |
+| `state` | `SlotState` | `"free" \| "reserved" \| "submitted"` |
+| `reservedAt` | `number?` | Unix ms when reserved |
+| `submittedAt` | `number?` | Unix ms when submitted |
+| `txHash` | `` `0x${string}`? `` | Transaction hash once submitted |
+| `requestId` | `string?` | Caller-provided idempotency key |
+| `validBefore` | `number?` | Unix seconds — tx must be included before this (expiring mode) |
+
+### Constants
+
+| Name | Value | Description |
+|------|-------|-------------|
+| `NONCE_PRECOMPILE` | `0x4e4F4E4345000000000000000000000000000000` | Address of the Tempo nonce precompile |
+| `MAX_UINT256` | `2n**256n - 1n` | `nonceKey` used for expiring mode (TIP-1009) |
+| `MODERATO_CHAIN_ID` | `42431` | Chain ID of the Moderato testnet |
+| `DEFAULT_LANES` | `4` | Default number of parallel lanes |
+| `DEFAULT_RESERVATION_TTL_MS` | `30_000` | Default reservation TTL in milliseconds |
+| `DEFAULT_VALID_BEFORE_OFFSET_S` | `30` | Default `validBefore` offset in seconds (expiring mode) |
+| `INONCE_ABI` | ABI array | Viem-compatible ABI for the `INonce` precompile (`getNonce(address, uint256) → uint64`) |
+
+### `NonceMode`
+
+```ts
+type NonceMode = "lanes" | "expiring";
+```
+
+- `"lanes"` — parallel nonces, one per lane key (1..N). Suitable for high-throughput concurrent sends.
+- `"expiring"` — TIP-1009 single slot with a `validBefore` deadline. Required for time-bounded transactions.
+
+### `getNonceFromPrecompile(client, address, nonceKey): Promise<bigint>`
+
+Query the nonce precompile (`0x4e4F4E4345000000000000000000000000000000`) for a specific lane.
+
+### `getProtocolNonce(client, address): Promise<bigint>`
+
+Query the standard protocol nonce via `getTransactionCount({ blockTag: "pending" })`.
+
 ---
 
 ## Publishing
 
-Releases are published to npm via the `release.yml` GitHub Actions workflow.
+Releases are published via the `release.yml` GitHub Actions workflow.
 
-**Setup:**
+### TypeScript SDK (`@tempo-reconcile/sdk`)
 
-1. Create a GitHub environment called `npm-publish` in your repository settings
-2. Add an `NPM_TOKEN` secret to that environment (generate at npmjs.com > Access Tokens)
-3. Tag a commit with `v*` (e.g. `git tag v0.1.0 && git push --tags`)
+1. Create a GitHub environment called `npm-publish` with an `NPM_TOKEN` secret
+2. Tag a commit with `v*` (e.g. `git tag v0.1.0 && git push --tags`)
+3. The workflow validates the tag matches `package.json` version, runs tests, builds, and publishes with `--provenance`
 
-The workflow validates that the git tag matches `package.json` version, runs tests and lint, builds, and publishes with `--provenance`. It also creates a GitHub Release with auto-generated notes.
+### TypeScript Nonces (`@tempo-reconcile/nonces`)
+
+1. Tag a commit with `nonces-v*` (e.g. `git tag nonces-v0.1.0 && git push --tags`)
+2. Same validation and publish flow as the SDK, targeting `ts/packages/nonces/`
+
+### Rust crate (`tempo-reconcile`)
+
+1. Add a `CARGO_REGISTRY_TOKEN` secret to the `crates-publish` environment
+2. Tag triggers `cargo publish -p tempo-reconcile`
+3. CLI binaries are built for Linux (x86_64, aarch64) and macOS (x86_64, aarch64) and attached to the GitHub Release

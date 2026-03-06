@@ -12,13 +12,14 @@ TIP-20 tokens on Tempo have a native `bytes32` memo field (`transferWithMemo`). 
 
 - `TEMPO-RECONCILE-MEMO-001` -- namespaced bytes32 memo layout. No PII on-chain.
 - `@tempo-reconcile/sdk` -- TypeScript SDK: memo codec, payment watcher, reconciler, exporters
+- `@tempo-reconcile/nonces` -- TypeScript nonce pool for Tempo's 2D nonce system (lanes + expiring)
 - `tempo-reconcile` -- Rust crate: same spec + test vectors, idiomatic Rust API
 
 Does not overlap with the official Tempo SDK (no wallet, no signing, no sponsored TX).
 
 ## Requirements
 
-Node.js >= 18.0.0 (for native `fetch`). The `sendWebhook` and `createExplorerClient` functions accept an optional `fetch` parameter for environments without global `fetch`.
+Node.js >= 20.0.0 (for native `fetch`). The `sendWebhook` and `createExplorerClient` functions accept an optional `fetch` parameter for environments without global `fetch`.
 
 ## Install
 
@@ -104,6 +105,23 @@ const { matched, issues } = reconciler.report()
 console.log(exportCsv([...matched, ...issues]))
 ```
 
+### Nonce management
+
+```typescript
+import { NoncePool } from '@tempo-reconcile/nonces'
+
+const pool = new NoncePool({
+  address: '0xYourAddress',
+  rpcUrl: 'https://rpc.moderato.tempo.xyz',
+})
+await pool.init()
+
+const slot = pool.acquire('payment-123')
+// Use slot.nonceKey and slot.nonce in your transaction
+pool.submit(slot.nonceKey, txHash)
+pool.confirm(slot.nonceKey)
+```
+
 Register expectations before ingesting events. If a payment arrives before its `expect()` call, it gets `unknown_memo` and the result is cached — re-ingesting won't re-evaluate. To reprocess, clear the store with `reconciler.reset()`.
 
 ## Rust
@@ -126,7 +144,7 @@ let memo_raw = encode_memo_v1(&EncodeMemoV1Params {
     salt: None,
 }).unwrap();
 
-let mut rec = Reconciler::new(ReconcilerOptions::new());
+let mut rec = Reconciler::new(ReconcilerOptions::new()).unwrap();
 rec.expect(ExpectedPayment {
     memo_raw: memo_raw.clone(),
     token: "0x20C0000000000000000000000000000000000000".to_string(),
@@ -177,7 +195,7 @@ Tempo Chain ──> Watcher ──> Reconciler ──> Exporter
 
 No server. No vendor lock-in. Works standalone with just an RPC URL.
 
-See the [runnable showcase example](ts/examples/reconcile-showcase.ts) for a complete pipeline in ~60 lines.
+See the [examples directory](ts/packages/sdk/examples/) for runnable scripts covering every module.
 
 ## Network
 
@@ -195,7 +213,7 @@ Testnet tokens: pathUSD (`0x20C0...0000`), AlphaUSD (`...0001`), BetaUSD (`...00
 - [Examples & walkthroughs](docs-public/EXAMPLES.md) -- module-by-module usage with both TS and Rust
 - [Memo spec](docs-public/MEMO-SPEC.md) -- TEMPO-RECONCILE-MEMO-001 bytes32 layout
 - [CLI reference](docs-public/CLI.md) -- `tempo-reconcile` command-line tool (Rust)
-- [TS examples](ts/examples/) -- 15 numbered examples + showcase, covering every module
+- [TS examples](ts/packages/sdk/examples/) -- numbered examples covering every module
 
 ## Contributing
 

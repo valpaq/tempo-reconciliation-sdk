@@ -34,7 +34,8 @@ fn main() {
         allow_partial: true,
         amount_tolerance_bps: 50, // 0.5% tolerance
         ..ReconcilerOptions::new()
-    });
+    })
+    .unwrap();
 
     reconciler
         .expect(ExpectedPayment {

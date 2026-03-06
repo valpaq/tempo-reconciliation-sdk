@@ -6,6 +6,7 @@ mod watch;
 #[cfg(feature = "watcher-ws")]
 mod watch_ws;
 
+pub use dedup::DedupCache;
 pub use watch::{get_tip20_transfer_history, watch_tip20_transfers, WatchConfig, WatchHandle};
 
 #[cfg(feature = "watcher-ws")]

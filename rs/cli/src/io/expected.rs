@@ -15,6 +15,46 @@ use tempo_reconcile::ExpectedPayment;
 /// memo_raw,token,to,amount,from,due_at,meta.invoiceId,meta.customer
 /// 0x01...,0x20c0...,0xrecipient,10000000,,,INV-001,Acme Corp
 /// ```
+/// Resolved column indices for expected-payment CSV headers.
+struct HeaderIndices {
+    memo_raw: usize,
+    token: usize,
+    to: usize,
+    amount: usize,
+    from: Option<usize>,
+    due_at: Option<usize>,
+    /// (column_index, stripped_key_name) pairs for `meta.*` columns.
+    meta: Vec<(usize, String)>,
+}
+
+impl HeaderIndices {
+    fn parse(headers: &[String]) -> Result<Self> {
+        for required in ["memo_raw", "token", "to", "amount"] {
+            if !headers.iter().any(|h| h == required) {
+                bail!("expected CSV missing required column: {required}");
+            }
+        }
+
+        let col = |name: &str| headers.iter().position(|h| h == name);
+
+        let meta = headers
+            .iter()
+            .enumerate()
+            .filter_map(|(i, h)| h.strip_prefix("meta.").map(|k| (i, k.to_string())))
+            .collect();
+
+        Ok(Self {
+            memo_raw: col("memo_raw").unwrap(),
+            token: col("token").unwrap(),
+            to: col("to").unwrap(),
+            amount: col("amount").unwrap(),
+            from: col("from"),
+            due_at: col("due_at"),
+            meta,
+        })
+    }
+}
+
 pub fn read_expected(path: &Path) -> Result<Vec<ExpectedPayment>> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("cannot open expected CSV {}", path.display()))?;
@@ -27,29 +67,7 @@ pub fn read_expected(path: &Path) -> Result<Vec<ExpectedPayment>> {
         .map(|h| h.to_string())
         .collect();
 
-    // Validate required columns exist.
-    for required in ["memo_raw", "token", "to", "amount"] {
-        if !headers.iter().any(|h| h == required) {
-            bail!("expected CSV missing required column: {required}");
-        }
-    }
-
-    // Column index helpers.
-    let col = |name: &str| headers.iter().position(|h| h == name);
-
-    let idx_memo_raw = col("memo_raw").ok_or_else(|| anyhow::anyhow!("memo_raw column missing"))?;
-    let idx_token = col("token").ok_or_else(|| anyhow::anyhow!("token column missing"))?;
-    let idx_to = col("to").ok_or_else(|| anyhow::anyhow!("to column missing"))?;
-    let idx_amount = col("amount").ok_or_else(|| anyhow::anyhow!("amount column missing"))?;
-    let idx_from = col("from");
-    let idx_due_at = col("due_at");
-
-    // meta.* column indices and their stripped key names.
-    let meta_cols: Vec<(usize, String)> = headers
-        .iter()
-        .enumerate()
-        .filter_map(|(i, h)| h.strip_prefix("meta.").map(|k| (i, k.to_string())))
-        .collect();
+    let idx = HeaderIndices::parse(&headers)?;
 
     let mut payments = Vec::new();
 
@@ -67,10 +85,10 @@ pub fn read_expected(path: &Path) -> Result<Vec<ExpectedPayment>> {
             }
         };
 
-        let memo_raw = get(idx_memo_raw);
-        let token = get(idx_token);
-        let to = get(idx_to);
-        let amount_str = get(idx_amount);
+        let memo_raw = get(idx.memo_raw);
+        let token = get(idx.token);
+        let to = get(idx.to);
+        let amount_str = get(idx.amount);
 
         if memo_raw.is_empty() || token.is_empty() || to.is_empty() || amount_str.is_empty() {
             bail!("{}:{}: required field is empty", path.display(), row_no + 2);
@@ -94,14 +112,16 @@ pub fn read_expected(path: &Path) -> Result<Vec<ExpectedPayment>> {
             )
         })?;
 
-        let from = idx_from.and_then(get_opt);
-        let due_at = idx_due_at
+        let from = idx.from.and_then(get_opt);
+        let due_at = idx
+            .due_at
             .and_then(get_opt)
             .map(|s| s.parse::<u64>())
             .transpose()
             .with_context(|| format!("{}:{}: invalid due_at", path.display(), row_no + 2))?;
 
-        let meta: HashMap<String, String> = meta_cols
+        let meta: HashMap<String, String> = idx
+            .meta
             .iter()
             .filter_map(|(i, key)| {
                 let v = record.get(*i).unwrap_or("").trim().to_string();

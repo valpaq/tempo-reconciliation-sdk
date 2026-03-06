@@ -20,7 +20,11 @@ flags:
     paths:
       - rs/
     carryforward: true
-  ts:
+  sdk:
     paths:
-      - ts/src/
+      - ts/packages/sdk/src/
+    carryforward: true
+  nonces:
+    paths:
+      - ts/packages/nonces/src/
     carryforward: true

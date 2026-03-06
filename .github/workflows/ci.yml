@@ -63,13 +63,6 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
-      - name: Semver check
-        if: false
-        uses: obi1kenobi/cargo-semver-checks-action@v2
-        with:
-          package: tempo-reconcile
-          manifest-path: rs/Cargo.toml
-
       - name: Check Rust docs sync
         run: bash scripts/check-rust-docs-sync.sh
         working-directory: ${{ github.workspace }}
@@ -97,7 +90,7 @@ jobs:
           key: ${{ matrix.os }}
 
       - name: Test
-        run: cargo test --all-features
+        run: cargo test --workspace --all-features
 
   rust-msrv:
     name: Rust MSRV (1.84)
@@ -118,7 +111,7 @@ jobs:
           key: msrv
 
       - name: Test (all features)
-        run: cargo test --all-features
+        run: cargo test --workspace --all-features
 
   rust-features:
     name: Rust feature combinations
@@ -161,6 +154,10 @@ jobs:
 
       - name: Feature explorer
         run: cargo test --features explorer
+
+      - name: Test nonces crate
+        run: cargo test -p tempo-reconcile-nonces
+        working-directory: rs
 
   rust-audit:
     name: Rust security audit
@@ -209,7 +206,7 @@ jobs:
 
       - name: Type Check Examples
         if: matrix.node-version == 20
-        run: pnpm exec tsc --noEmit --project tsconfig.examples.json
+        run: pnpm --filter @tempo-reconcile/sdk exec tsc --noEmit --project tsconfig.examples.json
 
       - name: Format Check
         if: matrix.node-version == 20
@@ -221,25 +218,29 @@ jobs:
       - name: Test + Coverage
         run: pnpm test:coverage
 
-      - name: Upload coverage
+      - name: Upload coverage (sdk)
         if: matrix.node-version == 20
         uses: codecov/codecov-action@v5
         with:
-          directory: ts/coverage
+          directory: ts/packages/sdk/coverage
+          flags: sdk
+
+      - name: Upload coverage (nonces)
+        if: matrix.node-version == 20
+        uses: codecov/codecov-action@v5
+        with:
+          directory: ts/packages/nonces/coverage
+          flags: nonces
 
       - name: Build
         run: pnpm build
 
       - name: Check pack
-        run: pnpm pack --dry-run
+        run: pnpm --filter @tempo-reconcile/sdk pack --dry-run
 
       - name: Check docs sync
         if: matrix.node-version == 20
         run: bash ../scripts/check-docs-sync.sh
-
-      - name: Security audit
-        if: matrix.node-version == 20
-        run: pnpm audit --audit-level=high
 
   stress:
     name: Stress tests

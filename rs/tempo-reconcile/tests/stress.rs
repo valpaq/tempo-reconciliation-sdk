@@ -11,7 +11,7 @@ const TO: &str = "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
 #[ignore = "stress: run with -- --include-ignored"]
 fn reconciler_handles_100k_events() {
     let tag = issuer_tag_from_namespace("stress-test");
-    let mut r = Reconciler::new(ReconcilerOptions::new());
+    let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
 
     const N: usize = 100_000;
 

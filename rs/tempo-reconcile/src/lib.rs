@@ -29,7 +29,7 @@
 //!         salt: None,
 //!     })?;
 //!
-//!     let mut reconciler = Reconciler::new(ReconcilerOptions::new());
+//!     let mut reconciler = Reconciler::new(ReconcilerOptions::new())?;
 //!     reconciler.expect(ExpectedPayment {
 //!         memo_raw: memo,
 //!         token: "0x20c0000000000000000000000000000000000000".to_string(),
@@ -90,7 +90,9 @@ pub use export::webhook::{send_webhook, sign, WebhookBatchError, WebhookConfig, 
 
 // watcher
 #[cfg(feature = "watcher")]
-pub use watcher::{get_tip20_transfer_history, watch_tip20_transfers, WatchConfig, WatchHandle};
+pub use watcher::{
+    get_tip20_transfer_history, watch_tip20_transfers, DedupCache, WatchConfig, WatchHandle,
+};
 
 #[cfg(feature = "watcher-ws")]
 pub use watcher::{watch_tip20_transfers_ws, WatchWsConfig};

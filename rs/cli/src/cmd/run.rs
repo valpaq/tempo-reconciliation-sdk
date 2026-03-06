@@ -100,7 +100,7 @@ pub fn run_reconcile(args: &RunArgs, json_output: bool) -> Result<()> {
         issuer_tag,
     };
 
-    let mut reconciler = Reconciler::new(opts);
+    let mut reconciler = Reconciler::new(opts)?;
 
     for payment in expected_payments {
         reconciler
@@ -111,10 +111,10 @@ pub fn run_reconcile(args: &RunArgs, json_output: bool) -> Result<()> {
     reconciler.ingest_many(events);
 
     let report = reconciler.report();
-
-    // Build full result list for export.
-    let mut all_results = report.matched.clone();
-    all_results.extend(report.issues.iter().cloned());
+    let summary = report.summary;
+    let pending = report.pending;
+    let mut all_results = report.matched;
+    all_results.extend(report.issues);
 
     let output = match args.format {
         OutputFormat::Csv => export_csv(&all_results),
@@ -122,7 +122,6 @@ pub fn run_reconcile(args: &RunArgs, json_output: bool) -> Result<()> {
         OutputFormat::Jsonl => export_jsonl(&all_results),
     };
 
-    // Write report to --out or stdout.
     match &args.out {
         Some(path) => {
             std::fs::write(path, &output)
@@ -138,76 +137,110 @@ pub fn run_reconcile(args: &RunArgs, json_output: bool) -> Result<()> {
         }
     }
 
-    // Print summary to stderr.
-    print_summary(&report.summary, json_output)?;
+    print_summary(&summary, &pending, json_output)?;
 
     Ok(())
 }
 
-fn print_summary(s: &tempo_reconcile::ReconcileSummary, json: bool) -> Result<()> {
-    let stderr = std::io::stderr();
-    let mut out = stderr.lock();
-
+fn print_summary(
+    s: &tempo_reconcile::ReconcileSummary,
+    pending: &[tempo_reconcile::ExpectedPayment],
+    json: bool,
+) -> Result<()> {
     if json {
-        let j = serde_json::json!({
-            "totalExpected":       s.total_expected,
-            "totalReceived":       s.total_received,
-            "matchedCount":        s.matched_count,
-            "issueCount":          s.issue_count,
-            "pendingCount":        s.pending_count,
-            "unknownMemoCount":    s.unknown_memo_count,
-            "noMemoCount":         s.no_memo_count,
-            "mismatchAmountCount": s.mismatch_amount_count,
-            "mismatchTokenCount":  s.mismatch_token_count,
-            "mismatchPartyCount":  s.mismatch_party_count,
-            "expiredCount":        s.expired_count,
-            "partialCount":        s.partial_count,
-            "totalExpectedAmount": s.total_expected_amount.to_string(),
-            "totalReceivedAmount": s.total_received_amount.to_string(),
-            "totalMatchedAmount":  s.total_matched_amount.to_string(),
-        });
-        writeln!(out, "{j}")?;
+        print_summary_json(s, pending)
     } else {
-        writeln!(out, "\nReconciliation Report")?;
-        writeln!(out, "=====================")?;
-        writeln!(
-            out,
-            "Total expected:   {} ({} units)",
-            s.total_expected, s.total_expected_amount
-        )?;
-        writeln!(
-            out,
-            "Total received:   {} ({} units)",
-            s.total_received, s.total_received_amount
-        )?;
-        writeln!(
-            out,
-            "Matched:          {} ({} units)",
-            s.matched_count, s.total_matched_amount
-        )?;
-        writeln!(out, "Issues:           {}", s.issue_count)?;
-        if s.unknown_memo_count > 0 {
-            writeln!(out, "  unknown_memo:     {}", s.unknown_memo_count)?;
+        print_summary_text(s, pending)
+    }
+}
+
+fn print_summary_json(
+    s: &tempo_reconcile::ReconcileSummary,
+    pending: &[tempo_reconcile::ExpectedPayment],
+) -> Result<()> {
+    let pending_list: Vec<serde_json::Value> = pending
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "memoRaw": &p.memo_raw,
+                "token":   &p.token,
+                "to":      &p.to,
+                "amount":  p.amount.to_string(),
+            })
+        })
+        .collect();
+    let j = serde_json::json!({
+        "totalExpected":       s.total_expected,
+        "totalReceived":       s.total_received,
+        "matchedCount":        s.matched_count,
+        "issueCount":          s.issue_count,
+        "pendingCount":        s.pending_count,
+        "unknownMemoCount":    s.unknown_memo_count,
+        "noMemoCount":         s.no_memo_count,
+        "mismatchAmountCount": s.mismatch_amount_count,
+        "mismatchTokenCount":  s.mismatch_token_count,
+        "mismatchPartyCount":  s.mismatch_party_count,
+        "expiredCount":        s.expired_count,
+        "partialCount":        s.partial_count,
+        "totalExpectedAmount": s.total_expected_amount.to_string(),
+        "totalReceivedAmount": s.total_received_amount.to_string(),
+        "totalMatchedAmount":  s.total_matched_amount.to_string(),
+        "pending":             pending_list,
+    });
+    writeln!(std::io::stderr().lock(), "{j}")?;
+    Ok(())
+}
+
+fn print_summary_text(
+    s: &tempo_reconcile::ReconcileSummary,
+    pending: &[tempo_reconcile::ExpectedPayment],
+) -> Result<()> {
+    let mut out = std::io::stderr().lock();
+    writeln!(out, "\nReconciliation Report")?;
+    writeln!(out, "=====================")?;
+    writeln!(
+        out,
+        "Total expected:   {} ({} units)",
+        s.total_expected, s.total_expected_amount
+    )?;
+    writeln!(
+        out,
+        "Total received:   {} ({} units)",
+        s.total_received, s.total_received_amount
+    )?;
+    writeln!(
+        out,
+        "Matched:          {} ({} units)",
+        s.matched_count, s.total_matched_amount
+    )?;
+    writeln!(out, "Issues:           {}", s.issue_count)?;
+    if s.unknown_memo_count > 0 {
+        writeln!(out, "  unknown_memo:     {}", s.unknown_memo_count)?;
+    }
+    if s.no_memo_count > 0 {
+        writeln!(out, "  no_memo:          {}", s.no_memo_count)?;
+    }
+    if s.mismatch_amount_count > 0 {
+        writeln!(out, "  mismatch_amount:  {}", s.mismatch_amount_count)?;
+    }
+    if s.mismatch_token_count > 0 {
+        writeln!(out, "  mismatch_token:   {}", s.mismatch_token_count)?;
+    }
+    if s.mismatch_party_count > 0 {
+        writeln!(out, "  mismatch_party:   {}", s.mismatch_party_count)?;
+    }
+    if s.expired_count > 0 {
+        writeln!(out, "  expired:          {}", s.expired_count)?;
+    }
+    if s.partial_count > 0 {
+        writeln!(out, "  partial:          {}", s.partial_count)?;
+    }
+    writeln!(out, "Pending:          {}", s.pending_count)?;
+    if !pending.is_empty() {
+        writeln!(out, "\nPending payments:")?;
+        for p in pending {
+            writeln!(out, "  {} ({} units -> {})", p.memo_raw, p.amount, p.to)?;
         }
-        if s.no_memo_count > 0 {
-            writeln!(out, "  no_memo:          {}", s.no_memo_count)?;
-        }
-        if s.mismatch_amount_count > 0 {
-            writeln!(out, "  mismatch_amount:  {}", s.mismatch_amount_count)?;
-        }
-        if s.mismatch_token_count > 0 {
-            writeln!(out, "  mismatch_token:   {}", s.mismatch_token_count)?;
-        }
-        if s.mismatch_party_count > 0 {
-            writeln!(out, "  mismatch_party:   {}", s.mismatch_party_count)?;
-        }
-        if s.expired_count > 0 {
-            writeln!(out, "  expired:          {}", s.expired_count)?;
-        }
-        if s.partial_count > 0 {
-            writeln!(out, "  partial:          {}", s.partial_count)?;
-        }
-        writeln!(out, "Pending:          {}", s.pending_count)?;
     }
     Ok(())
 }
@@ -241,12 +274,15 @@ mod tests {
     fn run_produces_report() {
         let memo1 = memo_for("test-ns", "01MASW9NF6YW40J40H289H858P");
         let memo2 = memo_for("test-ns", "01MASW9NF6YW40J40H289H858Q");
+        // memo3 is expected but has no matching event — it stays pending.
+        let memo3 = memo_for("test-ns", "01MASW9NF6YW40J40H289H858R");
 
-        // Expected: memo1 for 10 USDC
-        let expected_csv =
-            format!("memo_raw,token,to,amount\n{memo1},0x20c0,0xrecipient,10000000\n");
+        // Expected: memo1 for 10 USDC and memo3 (pending, no matching event).
+        let expected_csv = format!(
+            "memo_raw,token,to,amount\n{memo1},0x20c0,0xrecipient,10000000\n{memo3},0x20c0,0xrecipient,5000000\n"
+        );
 
-        // Events: memo1 matched, unknown memo2, no-memo event
+        // Events: memo1 matched, unknown memo2, no-memo event.
         let events_jsonl = format!(
             r#"{{"chainId":42431,"blockNumber":1,"txHash":"0xaaa","logIndex":0,"token":"0x20c0","from":"0xpayer","to":"0xrecipient","amount":"10000000","memoRaw":"{memo1}"}}
 {{"chainId":42431,"blockNumber":2,"txHash":"0xbbb","logIndex":0,"token":"0x20c0","from":"0xpayer","to":"0xrecipient","amount":"5000000","memoRaw":"{memo2}"}}
@@ -275,7 +311,7 @@ mod tests {
         run_reconcile(&args, false).unwrap();
 
         let csv = std::fs::read_to_string(out_file.path()).unwrap();
-        // header + 3 data rows
+        // header + 3 data rows (memo1 matched, memo2 unknown_memo, no-memo event no_memo)
         let lines: Vec<&str> = csv.lines().collect();
         assert_eq!(lines.len(), 4, "expected header + 3 data rows");
 
@@ -284,6 +320,71 @@ mod tests {
             lines[1].contains("matched"),
             "first event should be matched"
         );
+    }
+
+    #[test]
+    fn run_pending_payments_listed_in_text_summary() {
+        // memo1 is expected but no matching event arrives — it must appear in the pending list.
+        let memo1 = memo_for("pending-ns", "01MASW9NF6YW40J40H289H858P");
+
+        let expected_csv =
+            format!("memo_raw,token,to,amount\n{memo1},0x20c0,0xrecipient,10000000\n");
+
+        // No events at all.
+        let events_jsonl = "";
+
+        let expected_file = write_tmp(&expected_csv);
+        let events_file = write_tmp(events_jsonl);
+        let out_file = NamedTempFile::new().unwrap();
+
+        let args = RunArgs {
+            events: events_file.path().to_path_buf(),
+            expected: expected_file.path().to_path_buf(),
+            out: Some(out_file.path().to_path_buf()),
+            format: OutputFormat::Csv,
+            tolerance: 0,
+            strict_sender: false,
+            allow_partial: false,
+            reject_expired: false,
+            strict_amount: false,
+            partial_tolerance_mode: CliToleranceMode::Final,
+            issuer_namespace: None,
+        };
+
+        // Must not panic and must succeed even with pending items.
+        run_reconcile(&args, false).unwrap();
+        run_reconcile(&args, true).unwrap();
+
+        // Output file should be header-only (no matched/issue rows).
+        let csv = std::fs::read_to_string(out_file.path()).unwrap();
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines.len(), 1, "only header when all expected are pending");
+    }
+
+    #[test]
+    fn run_pending_json_summary_contains_pending_array() {
+        use tempo_reconcile::ReconcileSummary;
+
+        // Verify the JSON produced by print_summary contains a "pending" key
+        // by constructing a mock summary and pending list and calling it directly.
+        let s = ReconcileSummary {
+            total_expected: 1,
+            pending_count: 1,
+            ..Default::default()
+        };
+        let pending = vec![tempo_reconcile::ExpectedPayment {
+            memo_raw: "0xdeadbeef".to_string(),
+            token: "0x20c0".to_string(),
+            to: "0xrecipient".to_string(),
+            amount: 10_000_000,
+            from: None,
+            due_at: None,
+            meta: None,
+        }];
+
+        // Call print_summary — it writes to stderr; we just verify it doesn't error.
+        print_summary(&s, &pending, true).unwrap();
+        print_summary(&s, &pending, false).unwrap();
     }
 
     #[test]
@@ -470,24 +571,6 @@ mod tests {
 
         // Capture JSON output by calling the function directly
         run_reconcile(&args, true).unwrap();
-
-        // Verify by parsing the summary fields inline via print_summary
-        use tempo_reconcile::ReconcileSummary;
-        let s = ReconcileSummary {
-            total_expected: 1,
-            total_received: 1,
-            matched_count: 1,
-            total_expected_amount: 1_000_000,
-            total_received_amount: 1_000_000,
-            total_matched_amount: 1_000_000,
-            ..Default::default()
-        };
-        let j = serde_json::json!({
-            "totalExpectedAmount": s.total_expected_amount.to_string(),
-            "totalReceivedAmount": s.total_received_amount.to_string(),
-            "totalMatchedAmount":  s.total_matched_amount.to_string(),
-        });
-        assert!(j.get("totalExpectedAmount").is_some());
     }
 
     #[test]

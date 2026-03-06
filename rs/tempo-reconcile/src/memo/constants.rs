@@ -1,18 +1,14 @@
 use crate::types::MemoType;
 
-/// Total size of a TIP-20 memo in bytes (matches `bytes32` on-chain).
 pub const MEMO_BYTES: usize = 32;
-/// Byte offset of the 8-byte issuer tag field (bytes 1–8).
+/// Bytes 1..9 (8 bytes).
 pub const ISSUER_TAG_OFFSET: usize = 1;
-/// Size of the issuer tag field in bytes.
 pub const ISSUER_TAG_SIZE: usize = 8;
-/// Byte offset of the 16-byte ULID binary field (bytes 9–24).
+/// Bytes 9..25 (16 bytes).
 pub const ID16_OFFSET: usize = 9;
-/// Size of the ULID binary field in bytes.
 pub const ID16_SIZE: usize = 16;
-/// Byte offset of the 7-byte optional salt field (bytes 25–31).
+/// Bytes 25..32 (7 bytes, default zeros).
 pub const SALT_OFFSET: usize = 25;
-/// Size of the salt field in bytes. Defaults to all-zero when not provided.
 pub const SALT_SIZE: usize = 7;
 
 /// Denominator for basis-points calculations (1 bps = 0.01%).

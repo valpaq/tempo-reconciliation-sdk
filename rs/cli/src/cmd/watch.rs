@@ -130,6 +130,7 @@ pub async fn run_watch(args: &WatchArgs) -> Result<()> {
         dedup_max_size: 10_000,
         start_block: args.start_block,
         rpc_timeout_ms: args.rpc_timeout,
+        on_error: None,
     };
 
     // Open writer: append to file or use stdout.
@@ -164,7 +165,10 @@ pub async fn run_watch(args: &WatchArgs) -> Result<()> {
                 "memoRaw":    event.memo_raw,
                 "timestamp":  event.timestamp,
             });
-            let mut w = writer2.lock().unwrap_or_else(|e| e.into_inner());
+            let mut w = writer2.lock().unwrap_or_else(|e| {
+                eprintln!("Warning: writer mutex was poisoned, recovering");
+                e.into_inner()
+            });
             if let Err(e) = writeln!(w, "{line}") {
                 if e.kind() == std::io::ErrorKind::BrokenPipe {
                     break;
@@ -172,7 +176,7 @@ pub async fn run_watch(args: &WatchArgs) -> Result<()> {
                 eprintln!("error: failed to write event: {e}");
                 break;
             }
-            count2.fetch_add(1, Ordering::Relaxed);
+            count2.fetch_add(1, Ordering::Release);
         }
     })
     .await
@@ -181,8 +185,8 @@ pub async fn run_watch(args: &WatchArgs) -> Result<()> {
     eprintln!("Watching for TIP-20 events. Press Ctrl+C to stop.");
     tokio::signal::ctrl_c().await?;
 
-    let total = count.load(Ordering::Relaxed);
     handle.stop();
+    let total = count.load(Ordering::Acquire);
     eprintln!("Stopped. Captured {total} event(s).");
     Ok(())
 }
