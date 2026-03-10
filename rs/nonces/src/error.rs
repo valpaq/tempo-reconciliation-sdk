@@ -1,4 +1,4 @@
-use alloy::primitives::U256;
+use alloy_primitives::U256;
 
 /// Errors produced by the nonce pool.
 #[derive(Debug, thiserror::Error)]
@@ -38,9 +38,11 @@ pub enum NonceError {
         expected: &'static str,
     },
 
+    #[cfg(feature = "rpc")]
     #[error("NoncePool: chainId mismatch — configured {configured}, RPC returned {actual}")]
     ChainIdMismatch { configured: u64, actual: u64 },
 
+    #[cfg(feature = "rpc")]
     #[error("NoncePool: rpc error: {0}")]
     Rpc(#[from] alloy::contract::Error),
 }

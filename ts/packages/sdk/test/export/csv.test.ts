@@ -198,7 +198,9 @@ describe("exportCsv", () => {
 
 describe("formatAmount edge cases", () => {
   it("formats zero as 0.000000", () => {
-    const result = exportCsv([{ ...makeResult(), payment: { ...makeResult().payment, amount: 0n } }]);
+    const result = exportCsv([
+      { ...makeResult(), payment: { ...makeResult().payment, amount: 0n } },
+    ]);
     const row = result.split("\n")[1]!;
     const cells = row.split(",");
     const amountHuman = cells[9]!; // amount_human column
@@ -206,7 +208,9 @@ describe("formatAmount edge cases", () => {
   });
 
   it("formats sub-unit amount (1 unit = 0.000001)", () => {
-    const result = exportCsv([{ ...makeResult(), payment: { ...makeResult().payment, amount: 1n } }]);
+    const result = exportCsv([
+      { ...makeResult(), payment: { ...makeResult().payment, amount: 1n } },
+    ]);
     const row = result.split("\n")[1]!;
     const cells = row.split(",");
     const amountHuman = cells[9]!;

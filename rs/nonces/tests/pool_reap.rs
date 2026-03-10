@@ -40,7 +40,7 @@ fn reap_preserves_nonce() {
 
 #[test]
 fn reap_does_not_touch_submitted_slots() {
-    use alloy::primitives::FixedBytes;
+    use alloy_primitives::FixedBytes;
     let mut pool = NoncePool::new_for_testing(NonceMode::Lanes, 1, 1, 30);
     let key = pool.acquire(None).unwrap().nonce_key;
     pool.submit(key, FixedBytes::from([0; 32])).unwrap();

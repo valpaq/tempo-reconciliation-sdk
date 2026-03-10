@@ -1,6 +1,8 @@
+#[cfg(feature = "rand")]
+use tempo_reconcile::random_salt;
 use tempo_reconcile::{
-    bytes16_to_ulid, decode_memo_v1, encode_memo_v1, issuer_tag_from_namespace, random_salt,
-    ulid_to_bytes16, EncodeMemoV1Params, MemoError, MemoType,
+    bytes16_to_ulid, decode_memo_v1, encode_memo_v1, issuer_tag_from_namespace, ulid_to_bytes16,
+    EncodeMemoV1Params, MemoError, MemoType,
 };
 
 const VALID_ULID: &str = "01MASW9NF6YW40J40H289H858P";
@@ -208,11 +210,13 @@ fn roundtrip_all_types() {
     }
 }
 
+#[cfg(feature = "rand")]
 #[test]
 fn random_salt_is_seven_bytes() {
     assert_eq!(random_salt().len(), 7);
 }
 
+#[cfg(feature = "rand")]
 #[test]
 fn two_random_salts_differ() {
     assert_ne!(random_salt(), random_salt());

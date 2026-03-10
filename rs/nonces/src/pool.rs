@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use alloy::primitives::{Address, FixedBytes, U256};
-use alloy::providers::{Provider, ProviderBuilder};
+use alloy_primitives::{Address, FixedBytes, U256};
 
 use crate::constants::MAX_U256;
 use crate::error::NonceError;
-use crate::rpc::get_nonce_from_precompile;
 use crate::types::{NonceMode, NoncePoolOptions, NoncePoolStats, NonceSlot, SlotState};
 
 /// Production-grade nonce pool for Tempo's 2D nonce system.
@@ -31,12 +29,14 @@ use crate::types::{NonceMode, NoncePoolOptions, NoncePoolStats, NonceSlot, SlotS
 /// `!Sync`. For shared access across async tasks, wrap in `Arc<Mutex<NoncePool>>`.
 pub struct NoncePool {
     address: Address,
+    #[cfg_attr(not(feature = "rpc"), allow(dead_code))]
     rpc_url: String,
     mode: NonceMode,
     lane_count: u32,
     reservation_ttl_ms: u64,
     valid_before_offset_s: u64,
     chain_id: u64,
+    #[cfg_attr(not(feature = "rpc"), allow(dead_code))]
     validate_chain_id: bool,
 
     slots: Vec<NonceSlot>,
@@ -70,7 +70,7 @@ impl NoncePool {
         if options.rpc_url.is_empty() {
             return Err(NonceError::MissingRpcUrl);
         }
-        if options.lanes < 1 {
+        if options.lanes == 0 {
             return Err(NonceError::InvalidLanes);
         }
         if options.reservation_ttl_ms == 0 {
@@ -101,70 +101,6 @@ impl NoncePool {
     /// Configured chain ID.
     pub fn chain_id(&self) -> u64 {
         self.chain_id
-    }
-
-    /// Initialize the pool by querying on-chain nonce values.
-    pub async fn init(&mut self) -> Result<(), NonceError> {
-        if self.initialized {
-            return Err(NonceError::AlreadyInitialized);
-        }
-        self.fetch_and_init_slots().await?;
-        self.initialized = true;
-        Ok(())
-    }
-
-    async fn fetch_and_init_slots(&mut self) -> Result<(), NonceError> {
-        let provider = ProviderBuilder::new().connect_http(
-            self.rpc_url
-                .parse()
-                .map_err(|_| NonceError::MissingRpcUrl)?,
-        );
-
-        if self.validate_chain_id {
-            let actual: u64 = provider
-                .get_chain_id()
-                .await
-                .map_err(|e| NonceError::Rpc(alloy::contract::Error::TransportError(e)))?;
-            if actual != self.chain_id {
-                return Err(NonceError::ChainIdMismatch {
-                    configured: self.chain_id,
-                    actual,
-                });
-            }
-        }
-
-        self.slots.clear();
-        self.slot_index.clear();
-
-        match self.mode {
-            NonceMode::Lanes => {
-                let futs: Vec<_> = (1..=self.lane_count)
-                    .map(|i| {
-                        let key = U256::from(i);
-                        let prov = &provider;
-                        let addr = self.address;
-                        async move {
-                            let nonce = get_nonce_from_precompile(prov, addr, key).await?;
-                            Ok::<_, NonceError>((key, nonce))
-                        }
-                    })
-                    .collect();
-                let results = futures::future::join_all(futs).await;
-                for (idx, result) in results.into_iter().enumerate() {
-                    let (key, nonce) = result?;
-                    self.slots.push(NonceSlot::new(key, nonce));
-                    self.slot_index.insert(key, idx);
-                }
-            }
-            NonceMode::Expiring => {
-                let key = MAX_U256;
-                let nonce = get_nonce_from_precompile(&provider, self.address, key).await?;
-                self.slots.push(NonceSlot::new(key, nonce));
-                self.slot_index.insert(key, 0);
-            }
-        }
-
-        Ok(())
     }
 
     /// Acquire a free slot, transitioning it to Reserved.
@@ -254,7 +190,7 @@ impl NoncePool {
                 action: "fail",
                 nonce_key,
                 actual: slot.state.as_str(),
-                expected: "submitted\" or \"reserved",
+                expected: "reserved or submitted",
             });
         }
 
@@ -322,34 +258,6 @@ impl NoncePool {
         }
     }
 
-    /// Re-query all on-chain nonces and reset slots to Free.
-    /// Preserves cumulative stats.
-    /// Nonce fetches are issued in parallel for all slots.
-    pub async fn reset(&mut self) -> Result<(), NonceError> {
-        if !self.initialized {
-            return Err(NonceError::NotInitialized);
-        }
-
-        let provider = ProviderBuilder::new().connect_http(
-            self.rpc_url
-                .parse()
-                .map_err(|_| NonceError::MissingRpcUrl)?,
-        );
-
-        let futs: Vec<_> = self
-            .slots
-            .iter()
-            .map(|slot| get_nonce_from_precompile(&provider, self.address, slot.nonce_key))
-            .collect();
-        let results = futures::future::join_all(futs).await;
-        for (slot, result) in self.slots.iter_mut().zip(results) {
-            slot.nonce = result?;
-            slot.reset();
-        }
-
-        Ok(())
-    }
-
     fn get_slot_mut(&mut self, nonce_key: U256) -> Result<&mut NonceSlot, NonceError> {
         let idx = *self
             .slot_index
@@ -407,5 +315,107 @@ impl NoncePool {
         }
 
         pool
+    }
+}
+
+/// RPC-dependent methods (requires the `rpc` feature).
+#[cfg(feature = "rpc")]
+impl NoncePool {
+    /// Initialize the pool by querying on-chain nonce values.
+    pub async fn init(&mut self) -> Result<(), NonceError> {
+        if self.initialized {
+            return Err(NonceError::AlreadyInitialized);
+        }
+        self.fetch_and_init_slots().await?;
+        self.initialized = true;
+        Ok(())
+    }
+
+    fn build_provider(&self) -> Result<impl alloy::providers::Provider + Clone, NonceError> {
+        use alloy::providers::ProviderBuilder;
+        Ok(ProviderBuilder::new().connect_http(
+            self.rpc_url
+                .parse()
+                .map_err(|_| NonceError::MissingRpcUrl)?,
+        ))
+    }
+
+    async fn fetch_and_init_slots(&mut self) -> Result<(), NonceError> {
+        use crate::rpc::get_nonce_from_precompile;
+        use alloy::providers::Provider;
+
+        let provider = self.build_provider()?;
+
+        if self.validate_chain_id {
+            let actual: u64 = provider
+                .get_chain_id()
+                .await
+                .map_err(|e| NonceError::Rpc(alloy::contract::Error::TransportError(e)))?;
+            if actual != self.chain_id {
+                return Err(NonceError::ChainIdMismatch {
+                    configured: self.chain_id,
+                    actual,
+                });
+            }
+        }
+
+        self.slots.clear();
+        self.slot_index.clear();
+
+        match self.mode {
+            NonceMode::Lanes => {
+                let futs: Vec<_> = (1..=self.lane_count)
+                    .map(|i| {
+                        let key = U256::from(i);
+                        let prov = &provider;
+                        let addr = self.address;
+                        async move {
+                            let nonce = get_nonce_from_precompile(prov, addr, key).await?;
+                            Ok::<_, NonceError>((key, nonce))
+                        }
+                    })
+                    .collect();
+                let results = futures::future::join_all(futs).await;
+                for (idx, result) in results.into_iter().enumerate() {
+                    let (key, nonce) = result?;
+                    self.slots.push(NonceSlot::new(key, nonce));
+                    self.slot_index.insert(key, idx);
+                }
+            }
+            NonceMode::Expiring => {
+                let key = MAX_U256;
+                let nonce = get_nonce_from_precompile(&provider, self.address, key).await?;
+                self.slots.push(NonceSlot::new(key, nonce));
+                self.slot_index.insert(key, 0);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Re-query all on-chain nonces and reset slots to Free.
+    /// Preserves cumulative stats.
+    /// Nonce fetches are issued in parallel for all slots.
+    pub async fn reset(&mut self) -> Result<(), NonceError> {
+        use crate::rpc::get_nonce_from_precompile;
+
+        if !self.initialized {
+            return Err(NonceError::NotInitialized);
+        }
+
+        let provider = self.build_provider()?;
+
+        let futs: Vec<_> = self
+            .slots
+            .iter()
+            .map(|slot| get_nonce_from_precompile(&provider, self.address, slot.nonce_key))
+            .collect();
+        let results = futures::future::join_all(futs).await;
+        for (slot, result) in self.slots.iter_mut().zip(results) {
+            slot.nonce = result?;
+            slot.reset();
+        }
+
+        Ok(())
     }
 }

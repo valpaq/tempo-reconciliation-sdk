@@ -16,6 +16,7 @@ use crate::types::{Memo, MemoV1};
 /// let memo = decode_memo_v1(raw).unwrap();
 /// assert_eq!(memo.ulid, "01MASW9NF6YW40J40H289H858P");
 /// ```
+#[must_use]
 pub fn decode_memo_v1(memo_raw: &str) -> Option<MemoV1> {
     // Must be "0x" + 64 hex chars = 66 chars total (32 bytes).
     if !memo_raw.starts_with("0x") || memo_raw.len() != 66 {
@@ -59,6 +60,7 @@ pub fn decode_memo_v1(memo_raw: &str) -> Option<MemoV1> {
 ///
 /// Handles both left-zero-padded and right-zero-padded strings.
 /// Returns `None` if the bytes are not valid printable UTF-8 after stripping padding.
+#[must_use]
 pub fn decode_memo_text(memo_raw: &str) -> Option<String> {
     if !memo_raw.starts_with("0x") || memo_raw.len() != 66 {
         return None;
@@ -100,6 +102,7 @@ pub fn decode_memo_text(memo_raw: &str) -> Option<String> {
 /// Decode a bytes32 hex string: try v1 first, then UTF-8 text.
 ///
 /// Returns `None` if neither decoding succeeds.
+#[must_use]
 pub fn decode_memo(memo_raw: &str) -> Option<Memo> {
     if let Some(v1) = decode_memo_v1(memo_raw) {
         return Some(Memo::V1(v1));
@@ -108,6 +111,7 @@ pub fn decode_memo(memo_raw: &str) -> Option<Memo> {
 }
 
 /// Return true if memo_raw decodes as a valid v1 structured memo.
+#[must_use]
 pub fn is_memo_v1(memo_raw: &str) -> bool {
     decode_memo_v1(memo_raw).is_some()
 }

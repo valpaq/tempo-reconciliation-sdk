@@ -2,7 +2,7 @@
 name = "tempo-reconcile-cli"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.85"
 license = "MIT"
 description = "Command-line tool for TIP-20 payment reconciliation on Tempo"
 

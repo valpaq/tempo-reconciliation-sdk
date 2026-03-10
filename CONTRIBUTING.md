@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- Rust 1.70+ (`rustup update stable`)
-- Node.js 18+ and pnpm 10 (`npm i -g pnpm@10`)
+- Rust 1.85+ (`rustup update stable`)
+- Node.js 20+ and pnpm 10 (`npm i -g pnpm@10`)
 
 ## Running tests
 

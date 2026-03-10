@@ -103,13 +103,15 @@ describe("expiring mode full lifecycle", () => {
     expect(slot.state).toBe("reserved");
 
     pool.submit(slot.nonceKey, "0xexp");
-    expect(slot.state).toBe("submitted");
+    const afterSubmit = pool.getSlots().find((s) => s.nonceKey === slot.nonceKey)!;
+    expect(afterSubmit.state).toBe("submitted");
 
     pool.confirm(slot.nonceKey);
     // Confirm always recycles to free (no terminal states)
-    expect(slot.state).toBe("free");
-    expect(slot.validBefore).toBeUndefined();
-    expect(slot.nonce).toBe(0n);
+    const afterConfirm = pool.getSlots().find((s) => s.nonceKey === slot.nonceKey)!;
+    expect(afterConfirm.state).toBe("free");
+    expect(afterConfirm.validBefore).toBeUndefined();
+    expect(afterConfirm.nonce).toBe(0n);
   });
 
   it("fail resets to free with same nonce for retry", async () => {
@@ -119,8 +121,9 @@ describe("expiring mode full lifecycle", () => {
     const nonce = slot.nonce;
     pool.submit(slot.nonceKey, "0xfail");
     pool.fail(slot.nonceKey);
-    expect(slot.state).toBe("free");
-    expect(slot.nonce).toBe(nonce);
+    const current = pool.getSlots().find((s) => s.nonceKey === slot.nonceKey)!;
+    expect(current.state).toBe("free");
+    expect(current.nonce).toBe(nonce);
   });
 
   it("reap resets expired reservation to free", async () => {
@@ -146,7 +149,9 @@ describe("idempotency edge cases", () => {
     const s2 = pool.acquire("b");
     const s3 = pool.acquire("a"); // duplicate
     expect(s1.nonceKey).not.toBe(s2.nonceKey);
-    expect(s1).toBe(s3); // same reference
+    // s3 is a frozen snapshot of the same slot as s1
+    expect(s3.nonceKey).toBe(s1.nonceKey);
+    expect(s3.requestId).toBe("a");
   });
 
   it("requestId undefined always allocates new slot", async () => {

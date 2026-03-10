@@ -1,3 +1,4 @@
+#![cfg(feature = "watcher")]
 use std::time::Duration;
 use tempo_reconcile::watcher::DedupCache;
 

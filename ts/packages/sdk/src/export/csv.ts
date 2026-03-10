@@ -10,11 +10,13 @@ function escapeCsv(value: string): string {
 
 function formatAmount(amount: bigint): string {
   const decimals = 6;
-  const str = amount.toString();
+  const abs = amount < 0n ? -amount : amount;
+  const sign = amount < 0n ? "-" : "";
+  const str = abs.toString();
   if (str.length <= decimals) {
-    return `0.${str.padStart(decimals, "0")}`;
+    return `${sign}0.${str.padStart(decimals, "0")}`;
   }
-  return `${str.slice(0, str.length - decimals)}.${str.slice(str.length - decimals)}`;
+  return `${sign}${str.slice(0, str.length - decimals)}.${str.slice(str.length - decimals)}`;
 }
 
 /**

@@ -62,6 +62,7 @@ pub fn encode_memo_v1(params: &EncodeMemoV1Params) -> Result<String, MemoError> 
 
 /// Generate 7 cryptographically random bytes for use as a memo salt.
 #[cfg(feature = "rand")]
+#[must_use]
 pub fn random_salt() -> [u8; 7] {
     use rand::RngCore;
     let mut buf = [0u8; 7];

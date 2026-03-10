@@ -1,17 +1,31 @@
 /**
  * Time-windowed deduplication cache keyed on `(txHash, logIndex)`.
+ *
  * TTL is measured from insertion time; reads do not extend the TTL.
+ * When the cache exceeds `maxSize`, expired entries are evicted first,
+ * then the oldest entries are dropped.
  */
 export class DedupCache {
   private cache = new Map<string, number>();
   private ttlMs: number;
   private maxSize: number;
 
+  /**
+   * @param ttlMs - Time-to-live in milliseconds for each entry (default 60 000)
+   * @param maxSize - Maximum number of entries before eviction (default 10 000)
+   */
   constructor(ttlMs = 60_000, maxSize = 10_000) {
     this.ttlMs = ttlMs;
     this.maxSize = maxSize;
   }
 
+  /**
+   * Check whether a `(txHash, logIndex)` pair exists and has not expired.
+   *
+   * @param txHash - Transaction hash (case-insensitive)
+   * @param logIndex - Log index within the transaction
+   * @returns `true` if the entry exists and its TTL has not elapsed
+   */
   has(txHash: string, logIndex: number): boolean {
     const key = `${txHash.toLowerCase()}:${logIndex}`;
     const ts = this.cache.get(key);
@@ -19,6 +33,13 @@ export class DedupCache {
     return Date.now() - ts <= this.ttlMs;
   }
 
+  /**
+   * Insert or update a `(txHash, logIndex)` entry with the current timestamp.
+   * Triggers eviction if the cache exceeds `maxSize`.
+   *
+   * @param txHash - Transaction hash (case-insensitive)
+   * @param logIndex - Log index within the transaction
+   */
   add(txHash: string, logIndex: number): void {
     const key = `${txHash.toLowerCase()}:${logIndex}`;
     this.cache.set(key, Date.now());

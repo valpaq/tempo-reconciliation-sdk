@@ -29,12 +29,5 @@ pub fn type_code_to_memo_type(code: u8) -> Option<MemoType> {
 
 /// Map a MemoType to its type byte.
 pub fn memo_type_to_code(t: &MemoType) -> u8 {
-    match t {
-        MemoType::Invoice => 0x01,
-        MemoType::Payroll => 0x02,
-        MemoType::Refund => 0x03,
-        MemoType::Batch => 0x04,
-        MemoType::Subscription => 0x05,
-        MemoType::Custom => 0x0F,
-    }
+    t.type_byte()
 }

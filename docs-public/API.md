@@ -469,7 +469,7 @@ const reconciler = new Reconciler({ store })
 
 ### Custom store (database)
 
-For production, implement `ReconcileStore` backed by a database. **All methods must be synchronous** — the Reconciler calls them without `await`. The interface is small: 10 methods.
+For production, implement `ReconcileStore` backed by a database. **All methods must be synchronous** — the Reconciler calls them without `await`. The interface is small: 11 methods.
 
 ```typescript
 import type { ReconcileStore, ExpectedPayment, MatchResult } from '@tempo-reconcile/sdk'
@@ -1027,3 +1027,51 @@ Releases are published via the `release.yml` GitHub Actions workflow.
 1. Add a `CARGO_REGISTRY_TOKEN` secret to the `crates-publish` environment
 2. Tag triggers `cargo publish -p tempo-reconcile`
 3. CLI binaries are built for Linux (x86_64, aarch64) and macOS (x86_64, aarch64) and attached to the GitHub Release
+
+---
+
+## Thread Safety (Rust)
+
+`Reconciler<InMemoryStore>` is `Send` but not `Sync`. It is designed for single-threaded use or behind a mutex.
+
+For concurrent access:
+```rust
+use std::sync::{Arc, Mutex};
+let reconciler = Arc::new(Mutex::new(Reconciler::new(opts)?));
+```
+
+The memo encode/decode functions are pure and stateless — safe to call from any thread.
+
+---
+
+## Webhook Security
+
+The SDK signs webhook payloads with HMAC-SHA256. The receiving endpoint should:
+
+1. Extract the `X-Tempo-Reconcile-Signature` header
+2. Compute `HMAC-SHA256(secret, raw_body)`
+3. Compare signatures using constant-time comparison
+4. Reject requests with missing or invalid signatures
+
+**Secret management:**
+- Use a cryptographically random 256-bit (32-byte) secret
+- Store secrets in environment variables or a secrets manager, never in code
+- To rotate: accept both old and new secrets during a transition window
+
+---
+
+## Watcher Rate Limiting
+
+**HTTP polling (default):**
+- Default interval: 1 second (1000 ms) (Tempo has ~0.5s finality)
+- On RPC error: exponential backoff — 1s → 2s → 4s → 8s → 16s (cap)
+- On success: reset to default interval
+
+**WebSocket:**
+- Automatic reconnection with exponential backoff
+- No polling needed — events are pushed
+
+**RPC provider limits:**
+- Respect your provider's rate limits (typically 25-100 req/s)
+- The watcher makes 1 `eth_getLogs` call per poll interval
+- History backfill may burst briefly — consider a longer interval during catchup

@@ -25,7 +25,7 @@ pub struct WatchWsConfig {
     pub to: Option<String>,
     /// If true, also emit plain `Transfer(from, to, amount)` events (no memo). Default: false.
     pub include_transfer_only: bool,
-    /// Maximum reconnection attempts. Default: 10 (`0` = unlimited).
+    /// Maximum reconnection attempts. Default: 5 (`0` = unlimited).
     pub max_reconnects: u32,
     /// Base reconnect delay in milliseconds. Doubles per attempt, capped at 30 s. Default: 1000.
     pub reconnect_delay_ms: u64,

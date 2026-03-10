@@ -87,12 +87,8 @@ export function decodeMemoText(memoRaw: `0x${string}`): string | null {
     return tryDecodeUtf8(bytes);
   }
 
-  // zeros on both sides — try the non-zero middle
-  if (start < end) {
-    return tryDecodeUtf8(bytes.slice(start, end));
-  }
-
-  return null;
+  // zeros on both sides — non-zero middle
+  return tryDecodeUtf8(bytes.slice(start, end));
 }
 
 /**
@@ -159,12 +155,7 @@ export function decodeMemoV1(memoRaw: `0x${string}`): MemoV1 | null {
   const id16 = buf.slice(ID16_OFFSET, ID16_OFFSET + ID16_SIZE);
   const salt = buf.slice(SALT_OFFSET, SALT_OFFSET + SALT_SIZE);
 
-  let ulid: string;
-  try {
-    ulid = bytes16ToUlid(id16);
-  } catch {
-    return null;
-  }
+  const ulid = bytes16ToUlid(id16);
 
   return {
     v: 1,

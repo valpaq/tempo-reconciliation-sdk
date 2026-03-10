@@ -9,10 +9,14 @@ use crate::ReconcileError;
 /// How basis-points tolerance is applied to partial payments.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum ToleranceMode {
-    /// Tolerance applies to the final cumulative total.
+    /// Tolerance is applied to the cumulative total of all partial payments for a given memo.
+    /// Individual payments are not checked against tolerance; only the final accumulated
+    /// amount is compared.
     #[default]
     Final,
-    /// Tolerance applies per individual payment.
+    /// Tolerance is applied per individual payment. Each incoming payment is independently
+    /// checked: if within tolerance of the expected amount, it matches immediately. If below
+    /// tolerance, it is a mismatch_amount (no accumulation).
     Each,
 }
 
@@ -35,6 +39,7 @@ pub struct ReconcilerOptions {
 }
 
 impl ReconcilerOptions {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             issuer_tag: None,
@@ -143,13 +148,23 @@ impl<S: ReconcileStore> Reconciler<S> {
     }
 
     /// Generate a full reconciliation report.
+    ///
+    /// # Example
+    /// ```
+    /// # use tempo_reconcile::{Reconciler, ReconcilerOptions};
+    /// let mut r = Reconciler::new(ReconcilerOptions::new()).unwrap();
+    /// let report = r.report();
+    /// println!("matched: {}, issues: {}", report.summary.matched_count, report.summary.issue_count);
+    /// ```
+    #[must_use]
     pub fn report(&self) -> ReconcileReport {
         let all_results = self.store.get_all_results();
         let pending: Vec<ExpectedPayment> =
             self.store.get_all_expected().into_iter().cloned().collect();
 
-        let mut matched = Vec::new();
-        let mut issues = Vec::new();
+        let total = all_results.len();
+        let mut matched = Vec::with_capacity(total);
+        let mut issues = Vec::with_capacity(total);
         let mut summary = ReconcileSummary {
             // Use the monotonically increasing counters — correct even after remove_expected().
             total_expected: self.expected_count,
@@ -161,44 +176,26 @@ impl<S: ReconcileStore> Reconciler<S> {
 
         for r in all_results {
             summary.total_received_amount += r.payment.amount;
-            match r.status {
-                MatchStatus::Matched => {
-                    summary.matched_count += 1;
-                    summary.total_matched_amount += r
-                        .expected
-                        .as_ref()
-                        .map(|e| e.amount)
-                        .unwrap_or(r.payment.amount);
-                    matched.push(r.clone());
+            if r.status == MatchStatus::Matched {
+                summary.matched_count += 1;
+                summary.total_matched_amount += r
+                    .expected
+                    .as_ref()
+                    .map(|e| e.amount)
+                    .unwrap_or(r.payment.amount);
+                matched.push(r.clone());
+            } else {
+                match r.status {
+                    MatchStatus::Partial => summary.partial_count += 1,
+                    MatchStatus::UnknownMemo => summary.unknown_memo_count += 1,
+                    MatchStatus::NoMemo => summary.no_memo_count += 1,
+                    MatchStatus::MismatchAmount => summary.mismatch_amount_count += 1,
+                    MatchStatus::MismatchToken => summary.mismatch_token_count += 1,
+                    MatchStatus::MismatchParty => summary.mismatch_party_count += 1,
+                    MatchStatus::Expired => summary.expired_count += 1,
+                    MatchStatus::Matched => unreachable!(),
                 }
-                MatchStatus::Partial => {
-                    summary.partial_count += 1;
-                    issues.push(r.clone());
-                }
-                MatchStatus::UnknownMemo => {
-                    summary.unknown_memo_count += 1;
-                    issues.push(r.clone());
-                }
-                MatchStatus::NoMemo => {
-                    summary.no_memo_count += 1;
-                    issues.push(r.clone());
-                }
-                MatchStatus::MismatchAmount => {
-                    summary.mismatch_amount_count += 1;
-                    issues.push(r.clone());
-                }
-                MatchStatus::MismatchToken => {
-                    summary.mismatch_token_count += 1;
-                    issues.push(r.clone());
-                }
-                MatchStatus::MismatchParty => {
-                    summary.mismatch_party_count += 1;
-                    issues.push(r.clone());
-                }
-                MatchStatus::Expired => {
-                    summary.expired_count += 1;
-                    issues.push(r.clone());
-                }
+                issues.push(r.clone());
             }
         }
 
@@ -256,10 +253,10 @@ impl<S: ReconcileStore> Reconciler<S> {
     fn match_event(&mut self, event: &PaymentEvent) -> MatchResult {
         let memo_raw = match self.check_memo(event) {
             Ok(m) => m,
-            Err(result) => return result,
+            Err((status, reason)) => return self.result(event, status, None, reason),
         };
 
-        let expected = match self.store.get_expected(&memo_raw).cloned() {
+        let expected = match self.store.get_expected(memo_raw).cloned() {
             Some(e) => e,
             None => {
                 return self.result(
@@ -280,44 +277,37 @@ impl<S: ReconcileStore> Reconciler<S> {
             _ => None,
         };
         if self.opts.reject_expired && is_late == Some(true) {
-            return self.result_with(
-                event,
-                MatchStatus::Expired,
-                Some(expected),
-                "payment arrived after due_at",
-                None,
-                None,
+            return MatchResult {
+                status: MatchStatus::Expired,
+                payment: event.clone(),
+                expected: Some(expected),
+                reason: Some("payment arrived after due_at".to_string()),
+                overpaid_by: None,
+                remaining_amount: None,
                 is_late,
-            );
+            };
         }
 
-        self.match_amount(event, expected, &memo_raw, is_late)
+        self.match_amount(event, expected, memo_raw, is_late)
     }
 
-    /// Validate memo presence and issuer tag filter. Returns memo_raw or early MatchResult.
-    #[allow(clippy::result_large_err)]
-    fn check_memo(&self, event: &PaymentEvent) -> Result<String, MatchResult> {
+    /// Validate memo presence and issuer tag filter. Returns memo_raw or early error tuple.
+    fn check_memo<'a>(
+        &self,
+        event: &'a PaymentEvent,
+    ) -> Result<&'a str, (MatchStatus, &'static str)> {
         let memo_raw = match &event.memo_raw {
-            Some(m) => m.clone(),
-            None => {
-                return Err(self.result(
-                    event,
-                    MatchStatus::NoMemo,
-                    None,
-                    "no memo field on transfer",
-                ))
-            }
+            Some(m) => m.as_str(),
+            None => return Err((MatchStatus::NoMemo, "no memo field on transfer")),
         };
 
         if let Some(filter_tag) = self.opts.issuer_tag {
-            match decode_memo_v1(&memo_raw) {
+            match decode_memo_v1(memo_raw) {
                 Some(m) if m.issuer_tag == filter_tag => {}
                 _ => {
-                    return Err(self.result(
-                        event,
+                    return Err((
                         MatchStatus::UnknownMemo,
-                        None,
-                        "memo issuerTag does not match filter",
+                        "memo issuer_tag does not match filter",
                     ))
                 }
             }
@@ -393,28 +383,28 @@ impl<S: ReconcileStore> Reconciler<S> {
                 "overpaid: got {}, expected {}",
                 event.amount, expected.amount
             );
-            return self.result_with(
-                event,
-                MatchStatus::MismatchAmount,
-                Some(expected),
-                &reason,
+            return MatchResult {
+                status: MatchStatus::MismatchAmount,
+                payment: event.clone(),
+                expected: Some(expected),
+                reason: Some(reason),
                 overpaid_by,
-                None,
+                remaining_amount: None,
                 is_late,
-            );
+            };
         }
 
         // Matched!
         self.store.remove_expected(memo_raw);
-        self.result_with(
-            event,
-            MatchStatus::Matched,
-            Some(expected),
-            "",
+        MatchResult {
+            status: MatchStatus::Matched,
+            payment: event.clone(),
+            expected: Some(expected),
+            reason: None,
             overpaid_by,
-            None,
+            remaining_amount: None,
             is_late,
-        )
+        }
     }
 
     /// Handle underpaid amounts. Returns Some(result) if resolved, None to fall through to matched.
@@ -458,15 +448,15 @@ impl<S: ReconcileStore> Reconciler<S> {
             "underpaid: got {}, expected {}",
             event.amount, expected.amount
         );
-        Some(self.result_with(
-            event,
-            MatchStatus::MismatchAmount,
-            Some(expected.clone()),
-            &reason,
-            None,
-            Some(underpaid_by),
+        Some(MatchResult {
+            status: MatchStatus::MismatchAmount,
+            payment: event.clone(),
+            expected: Some(expected.clone()),
+            reason: Some(reason),
+            overpaid_by: None,
+            remaining_amount: Some(underpaid_by),
             is_late,
-        ))
+        })
     }
 
     /// "Each" mode: tolerance applied per individual payment.
@@ -483,15 +473,15 @@ impl<S: ReconcileStore> Reconciler<S> {
                 "underpaid: got {}, expected {}",
                 event.amount, expected.amount
             );
-            return Some(self.result_with(
-                event,
-                MatchStatus::MismatchAmount,
-                Some(expected.clone()),
-                &reason,
-                None,
-                Some(underpaid_by),
+            return Some(MatchResult {
+                status: MatchStatus::MismatchAmount,
+                payment: event.clone(),
+                expected: Some(expected.clone()),
+                reason: Some(reason),
+                overpaid_by: None,
+                remaining_amount: Some(underpaid_by),
                 is_late,
-            ));
+            });
         }
         None // within tolerance, treat as match
     }
@@ -514,30 +504,30 @@ impl<S: ReconcileStore> Reconciler<S> {
             } else {
                 None
             };
-            return self.result_with(
-                event,
-                MatchStatus::Matched,
-                Some(expected.clone()),
-                "",
+            return MatchResult {
+                status: MatchStatus::Matched,
+                payment: event.clone(),
+                expected: Some(expected.clone()),
+                reason: None,
                 overpaid_by,
-                None,
+                remaining_amount: None,
                 is_late,
-            );
+            };
         }
         let remaining = expected.amount.saturating_sub(cumulative);
         let reason = format!(
             "partial: accumulated {}, need {}",
             cumulative, expected.amount
         );
-        self.result_with(
-            event,
-            MatchStatus::Partial,
-            Some(expected.clone()),
-            &reason,
-            None,
-            Some(remaining),
+        MatchResult {
+            status: MatchStatus::Partial,
+            payment: event.clone(),
+            expected: Some(expected.clone()),
+            reason: Some(reason),
+            overpaid_by: None,
+            remaining_amount: Some(remaining),
             is_late,
-        )
+        }
     }
 
     /// Build a MatchResult with common defaults.
@@ -548,21 +538,6 @@ impl<S: ReconcileStore> Reconciler<S> {
         expected: Option<ExpectedPayment>,
         reason: &str,
     ) -> MatchResult {
-        self.result_with(event, status, expected, reason, None, None, None)
-    }
-
-    /// Build a MatchResult with all fields.
-    #[allow(clippy::too_many_arguments)]
-    fn result_with(
-        &self,
-        event: &PaymentEvent,
-        status: MatchStatus,
-        expected: Option<ExpectedPayment>,
-        reason: &str,
-        overpaid_by: Option<u128>,
-        remaining_amount: Option<u128>,
-        is_late: Option<bool>,
-    ) -> MatchResult {
         MatchResult {
             status,
             payment: event.clone(),
@@ -572,9 +547,9 @@ impl<S: ReconcileStore> Reconciler<S> {
             } else {
                 Some(reason.to_string())
             },
-            overpaid_by,
-            remaining_amount,
-            is_late,
+            overpaid_by: None,
+            remaining_amount: None,
+            is_late: None,
         }
     }
 }
