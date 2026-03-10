@@ -12,6 +12,7 @@ use sha3::{Digest, Keccak256};
 /// use tempo_reconcile::issuer_tag_from_namespace;
 /// let tag = issuer_tag_from_namespace("my-app");
 /// ```
+#[must_use]
 pub fn issuer_tag_from_namespace(namespace: &str) -> u64 {
     let hash = Keccak256::digest(namespace.as_bytes());
     // keccak256 always produces 32 bytes; extract first 8 with explicit indexing.

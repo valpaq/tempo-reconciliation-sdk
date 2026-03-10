@@ -108,13 +108,13 @@ export class NoncePool {
    * @throws If no free slots are available (pool exhausted)
    * @throws If pool is not initialized
    */
-  acquire(requestId?: string): NonceSlot {
+  acquire(requestId?: string): Readonly<NonceSlot> {
     this._assertInitialized();
 
     if (requestId !== undefined) {
       for (const s of this.slots.values()) {
         if (s.requestId === requestId && (s.state === "reserved" || s.state === "submitted")) {
-          return s;
+          return Object.freeze({ ...s });
         }
       }
     }
@@ -141,7 +141,7 @@ export class NoncePool {
       free.validBefore = Math.floor(now / 1000) + this.validBeforeOffsetS;
     }
 
-    return free;
+    return Object.freeze({ ...free });
   }
 
   /**

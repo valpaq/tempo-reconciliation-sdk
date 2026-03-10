@@ -13,6 +13,23 @@ import { buildAddressFilter } from "./utils";
  * @param options - RPC config, token address, block range, and optional filters
  * @returns All matching PaymentEvents in ascending block order
  * @throws If any batch RPC call fails after calling onError
+ *
+ * @example
+ * ```ts
+ * import { getTip20TransferHistory } from "@tempo-reconcile/sdk/watcher";
+ *
+ * const events = await getTip20TransferHistory({
+ *   rpcUrl: "https://rpc.moderato.tempo.xyz",
+ *   chainId: 42431,
+ *   token: "0x20C0000000000000000000000000000000000000",
+ *   fromBlock: 100_000n,
+ *   toBlock: 200_000n,
+ * });
+ *
+ * for (const evt of events) {
+ *   console.log(evt.txHash, evt.amount, evt.memo);
+ * }
+ * ```
  */
 export async function getTip20TransferHistory(options: HistoryOptions): Promise<PaymentEvent[]> {
   const {

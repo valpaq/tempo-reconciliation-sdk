@@ -1,4 +1,4 @@
-use alloy::primitives::Address;
+use alloy_primitives::Address;
 use tempo_reconcile_nonces::constants::{
     DEFAULT_LANES, DEFAULT_RESERVATION_TTL_MS, DEFAULT_VALID_BEFORE_OFFSET_S, MODERATO_CHAIN_ID,
 };
@@ -79,6 +79,7 @@ fn acquire_before_init_fails() {
     assert!(err.to_string().contains("not initialized"));
 }
 
+#[cfg(feature = "rpc")]
 #[tokio::test]
 async fn double_init_fails() {
     // We can't truly double-init without RPC, but we can test
@@ -94,8 +95,8 @@ fn submit_nonexistent_key_fails() {
     let mut pool = NoncePool::new_for_testing(NonceMode::Lanes, 1, 30_000, 30);
     let err = pool
         .submit(
-            alloy::primitives::U256::from(999),
-            alloy::primitives::FixedBytes::from([0; 32]),
+            alloy_primitives::U256::from(999),
+            alloy_primitives::FixedBytes::from([0; 32]),
         )
         .unwrap_err();
     assert!(err.to_string().contains("slot not found"));
@@ -104,24 +105,20 @@ fn submit_nonexistent_key_fails() {
 #[test]
 fn confirm_nonexistent_key_fails() {
     let mut pool = NoncePool::new_for_testing(NonceMode::Lanes, 1, 30_000, 30);
-    let err = pool
-        .confirm(alloy::primitives::U256::from(999))
-        .unwrap_err();
+    let err = pool.confirm(alloy_primitives::U256::from(999)).unwrap_err();
     assert!(err.to_string().contains("slot not found"));
 }
 
 #[test]
 fn fail_nonexistent_key_fails() {
     let mut pool = NoncePool::new_for_testing(NonceMode::Lanes, 1, 30_000, 30);
-    let err = pool.fail(alloy::primitives::U256::from(999)).unwrap_err();
+    let err = pool.fail(alloy_primitives::U256::from(999)).unwrap_err();
     assert!(err.to_string().contains("slot not found"));
 }
 
 #[test]
 fn release_nonexistent_key_fails() {
     let mut pool = NoncePool::new_for_testing(NonceMode::Lanes, 1, 30_000, 30);
-    let err = pool
-        .release(alloy::primitives::U256::from(999))
-        .unwrap_err();
+    let err = pool.release(alloy_primitives::U256::from(999)).unwrap_err();
     assert!(err.to_string().contains("slot not found"));
 }

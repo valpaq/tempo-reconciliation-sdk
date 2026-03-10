@@ -93,7 +93,7 @@ jobs:
         run: cargo test --workspace --all-features
 
   rust-msrv:
-    name: Rust MSRV (1.84)
+    name: Rust MSRV (1.91)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -103,7 +103,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@1.84
+      - uses: dtolnay/rust-toolchain@1.91
 
       - uses: Swatinem/rust-cache@v2
         with:

@@ -14,6 +14,7 @@ pub enum MemoType {
 }
 
 impl MemoType {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             MemoType::Invoice => "invoice",
@@ -26,6 +27,7 @@ impl MemoType {
     }
 
     /// Returns the wire byte for this memo type.
+    #[must_use]
     pub fn type_byte(&self) -> u8 {
         match self {
             MemoType::Invoice => 0x01,
@@ -143,6 +145,7 @@ pub enum MatchStatus {
 }
 
 impl MatchStatus {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             MatchStatus::Matched => "matched",

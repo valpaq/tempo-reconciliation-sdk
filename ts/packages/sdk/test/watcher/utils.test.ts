@@ -15,9 +15,10 @@ describe("buildAddressFilter", () => {
   });
 
   it("includes both to and from when both are provided", () => {
-    expect(
-      buildAddressFilter("0xaaaa" as `0x${string}`, "0xbbbb" as `0x${string}`),
-    ).toEqual({ to: "0xaaaa", from: "0xbbbb" });
+    expect(buildAddressFilter("0xaaaa" as `0x${string}`, "0xbbbb" as `0x${string}`)).toEqual({
+      to: "0xaaaa",
+      from: "0xbbbb",
+    });
   });
 
   it("does not include keys with undefined values", () => {

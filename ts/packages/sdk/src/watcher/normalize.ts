@@ -14,6 +14,8 @@ type TransferArgs = {
 };
 
 /**
+ * @internal Not exported from the public watcher API.
+ *
  * Normalize a raw viem contract event log into a `PaymentEvent`.
  *
  * Handles both `TransferWithMemo` (has `amount` + `memo` args) and plain

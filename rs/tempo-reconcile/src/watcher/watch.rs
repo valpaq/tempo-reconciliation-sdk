@@ -73,13 +73,19 @@ impl WatchHandle {
     }
 
     /// Signal the watcher to stop at the next poll cycle.
-    pub fn stop(self) {
+    pub fn stop(&self) {
         let _ = self.stop.send(true);
     }
 
-    /// Wait for the watcher task to finish after [`stop`](Self::stop) is called.
+    /// Wait for the watcher task to finish. Call [`stop`](Self::stop) first.
     pub async fn join(self) {
         let _ = self.handle.await;
+    }
+
+    /// Signal stop and wait for the task to finish.
+    pub async fn stop_and_join(self) {
+        self.stop();
+        self.join().await;
     }
 }
 

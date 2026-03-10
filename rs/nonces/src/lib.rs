@@ -7,11 +7,13 @@
 pub mod constants;
 pub mod error;
 pub mod pool;
+#[cfg(feature = "rpc")]
 pub mod rpc;
 pub mod types;
 
 pub use constants::*;
 pub use error::NonceError;
 pub use pool::NoncePool;
+#[cfg(feature = "rpc")]
 pub use rpc::{get_nonce_from_precompile, get_protocol_nonce};
 pub use types::*;

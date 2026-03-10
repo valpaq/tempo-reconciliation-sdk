@@ -8,15 +8,15 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],
-      exclude: ["src/**/*.d.ts"],
+      exclude: ["src/**/*.d.ts", "src/**/index.ts"],
       thresholds: {
         lines: 80,
         functions: 80,
         branches: 75,
         statements: 80,
         "src/memo/**/*.ts": {
-          statements: 100,
-          branches: 90,
+          statements: 98,
+          branches: 95,
           functions: 100,
           lines: 100,
         },

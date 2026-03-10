@@ -31,19 +31,27 @@ describe("NoncePool constructor", () => {
   });
 
   it("throws if rpcUrl is empty", () => {
-    expect(() => new NoncePool({ address: "0x01", rpcUrl: "" })).toThrow("NoncePool: rpcUrl is required");
+    expect(() => new NoncePool({ address: "0x01", rpcUrl: "" })).toThrow(
+      "NoncePool: rpcUrl is required",
+    );
   });
 
   it("throws if lanes < 1", () => {
-    expect(() => new NoncePool({ ...defaultOpts, lanes: 0 })).toThrow("NoncePool: lanes must be an integer >= 1");
+    expect(() => new NoncePool({ ...defaultOpts, lanes: 0 })).toThrow(
+      "NoncePool: lanes must be an integer >= 1",
+    );
   });
 
   it("throws if lanes is NaN", () => {
-    expect(() => new NoncePool({ ...defaultOpts, lanes: NaN })).toThrow("NoncePool: lanes must be an integer >= 1");
+    expect(() => new NoncePool({ ...defaultOpts, lanes: NaN })).toThrow(
+      "NoncePool: lanes must be an integer >= 1",
+    );
   });
 
   it("throws if lanes is non-integer", () => {
-    expect(() => new NoncePool({ ...defaultOpts, lanes: 1.5 })).toThrow("NoncePool: lanes must be an integer >= 1");
+    expect(() => new NoncePool({ ...defaultOpts, lanes: 1.5 })).toThrow(
+      "NoncePool: lanes must be an integer >= 1",
+    );
   });
 
   it("throws if reservationTtlMs <= 0", () => {
@@ -153,8 +161,9 @@ describe("NoncePool.acquire", () => {
     const pool = await createPool({ lanes: 2 });
     const s1 = pool.acquire("req-1");
     const s2 = pool.acquire("req-1");
-    expect(s1).toBe(s2);
+    // Both are frozen snapshots — same nonceKey and requestId, not the same object reference
     expect(s1.nonceKey).toBe(s2.nonceKey);
+    expect(s1.requestId).toBe(s2.requestId);
   });
 
   it("does not return confirmed slot for same requestId", async () => {
@@ -188,9 +197,10 @@ describe("NoncePool.submit", () => {
     const pool = await createPool();
     const slot = pool.acquire();
     pool.submit(slot.nonceKey, "0xdeadbeef");
-    expect(slot.state).toBe("submitted");
-    expect(slot.txHash).toBe("0xdeadbeef");
-    expect(slot.submittedAt).toBeDefined();
+    const current = pool.getSlots().find((s) => s.nonceKey === slot.nonceKey)!;
+    expect(current.state).toBe("submitted");
+    expect(current.txHash).toBe("0xdeadbeef");
+    expect(current.submittedAt).toBeDefined();
   });
 
   it("throws if slot is not reserved", async () => {
@@ -243,8 +253,9 @@ describe("NoncePool.confirm", () => {
     const originalNonce = slot.nonce;
     pool.submit(slot.nonceKey, "0xaaa");
     pool.confirm(slot.nonceKey);
-    expect(slot.state).toBe("free");
-    expect(slot.nonce).toBe(originalNonce);
+    const current = pool.getSlots().find((s) => s.nonceKey === slot.nonceKey)!;
+    expect(current.state).toBe("free");
+    expect(current.nonce).toBe(originalNonce);
   });
 
   it("throws if slot is not submitted", async () => {
@@ -277,8 +288,9 @@ describe("NoncePool.fail", () => {
     const slot = pool.acquire();
     const originalNonce = slot.nonce;
     pool.fail(slot.nonceKey);
-    expect(slot.state).toBe("free");
-    expect(slot.nonce).toBe(originalNonce);
+    const current = pool.getSlots().find((s) => s.nonceKey === slot.nonceKey)!;
+    expect(current.state).toBe("free");
+    expect(current.nonce).toBe(originalNonce);
   });
 
   it("throws on invalid state", async () => {
@@ -298,12 +310,13 @@ describe("NoncePool.release", () => {
     const slot = pool.acquire("req-1");
     pool.submit(slot.nonceKey, "0xaaa");
     pool.release(slot.nonceKey);
-    expect(slot.state).toBe("free");
-    expect(slot.txHash).toBeUndefined();
-    expect(slot.requestId).toBeUndefined();
-    expect(slot.reservedAt).toBeUndefined();
-    expect(slot.submittedAt).toBeUndefined();
-    expect(slot.validBefore).toBeUndefined();
+    const current = pool.getSlots().find((s) => s.nonceKey === slot.nonceKey)!;
+    expect(current.state).toBe("free");
+    expect(current.txHash).toBeUndefined();
+    expect(current.requestId).toBeUndefined();
+    expect(current.reservedAt).toBeUndefined();
+    expect(current.submittedAt).toBeUndefined();
+    expect(current.validBefore).toBeUndefined();
   });
 
   it("resets expiring mode slot to free", async () => {
@@ -311,8 +324,9 @@ describe("NoncePool.release", () => {
     const slot = pool.acquire();
     expect(slot.validBefore).toBeDefined();
     pool.release(slot.nonceKey);
-    expect(slot.state).toBe("free");
-    expect(slot.validBefore).toBeUndefined();
+    const current = pool.getSlots().find((s) => s.nonceKey === slot.nonceKey)!;
+    expect(current.state).toBe("free");
+    expect(current.validBefore).toBeUndefined();
   });
 
   it("does not increment confirmed or failed counters", async () => {
@@ -529,10 +543,12 @@ describe("NoncePool additional edge cases", () => {
     const pool = await createPool({ lanes: 2 });
     const s1 = pool.acquire("req-inflight");
     pool.submit(s1.nonceKey, "0xaaa");
-    expect(s1.state).toBe("submitted");
+    const afterSubmit = pool.getSlots().find((s) => s.nonceKey === s1.nonceKey)!;
+    expect(afterSubmit.state).toBe("submitted");
     // Same requestId — should return the submitted slot, not a new one
     const s2 = pool.acquire("req-inflight");
-    expect(s2).toBe(s1);
+    expect(s2.nonceKey).toBe(s1.nonceKey);
+    expect(s2.requestId).toBe("req-inflight");
     expect(s2.state).toBe("submitted");
   });
 
@@ -588,8 +604,9 @@ describe("NoncePool additional edge cases", () => {
     const originalNonce = slot.nonce;
     pool.submit(slot.nonceKey, "0xaaa");
     pool.confirm(slot.nonceKey);
-    expect(slot.state).toBe("free");
-    expect(slot.nonce).toBe(originalNonce);
+    const current = pool.getSlots().find((s) => s.nonceKey === slot.nonceKey)!;
+    expect(current.state).toBe("free");
+    expect(current.nonce).toBe(originalNonce);
   });
 
   it("acquire() after fail() with same requestId allocates a fresh slot", async () => {

@@ -14,6 +14,26 @@ import { buildAddressFilter } from "./utils";
  * @param options - WebSocket URL, chain ID, token, filters, and reconnect config
  * @param callback - Called once per unique PaymentEvent
  * @returns Unsubscribe function
+ *
+ * @example
+ * ```ts
+ * import { watchTip20TransfersWs } from "@tempo-reconcile/sdk/watcher";
+ *
+ * const unsubscribe = watchTip20TransfersWs(
+ *   {
+ *     wsUrl: "wss://rpc.moderato.tempo.xyz",
+ *     chainId: 42431,
+ *     token: "0x20C0000000000000000000000000000000000000",
+ *     onError: (err) => console.error("ws error:", err),
+ *   },
+ *   (event) => {
+ *     console.log("transfer:", event.txHash, event.amount);
+ *   },
+ * );
+ *
+ * // Later: stop listening
+ * unsubscribe();
+ * ```
  */
 export function watchTip20TransfersWs(
   options: WatchWsOptions,

@@ -1,4 +1,4 @@
-use alloy::primitives::{FixedBytes, U256};
+use alloy_primitives::{FixedBytes, U256};
 use std::time::Instant;
 
 /// Nonce pool operating mode.
@@ -70,7 +70,7 @@ impl NonceSlot {
 #[derive(Debug, Clone)]
 pub struct NoncePoolOptions {
     /// Sender account address (required).
-    pub address: alloy::primitives::Address,
+    pub address: alloy_primitives::Address,
     /// RPC endpoint URL (required).
     pub rpc_url: String,
     /// Number of parallel lanes (default: 4). Only used in Lanes mode.
@@ -90,7 +90,7 @@ pub struct NoncePoolOptions {
 impl Default for NoncePoolOptions {
     fn default() -> Self {
         Self {
-            address: alloy::primitives::Address::ZERO,
+            address: alloy_primitives::Address::ZERO,
             rpc_url: String::new(),
             lanes: crate::constants::DEFAULT_LANES,
             mode: NonceMode::Lanes,

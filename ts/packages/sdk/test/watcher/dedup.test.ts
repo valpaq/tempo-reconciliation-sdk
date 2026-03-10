@@ -20,9 +20,9 @@ describe("DedupCache", () => {
   it("matches case-insensitively on txHash", () => {
     const cache = new DedupCache();
     cache.add("0xABC123def456789000000000000000000000000000000000000000000000abcd", 0);
-    expect(
-      cache.has("0xabc123def456789000000000000000000000000000000000000000000000abcd", 0),
-    ).toBe(true);
+    expect(cache.has("0xabc123def456789000000000000000000000000000000000000000000000abcd", 0)).toBe(
+      true,
+    );
   });
 
   it("differentiates by logIndex", () => {

@@ -90,8 +90,7 @@ pub fn ulid_to_bytes16(ulid: &str) -> Result<[u8; 16], crate::MemoError> {
 }
 
 /// Convert 16 bytes (big-endian u128) to a 26-character Crockford base32 ULID string.
-///
-/// Returns an error if the slice is not exactly 16 bytes.
+#[must_use]
 pub fn bytes16_to_ulid(id16: &[u8; 16]) -> String {
     // Convert to u128 big-endian.
     let mut bits: u128 = 0;

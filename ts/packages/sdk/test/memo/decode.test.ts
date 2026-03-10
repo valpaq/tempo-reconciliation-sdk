@@ -173,6 +173,55 @@ describe("decodeMemoText", () => {
     const hex = ("0x" + "00".repeat(10) + "6869" + "00".repeat(20)) as `0x${string}`;
     expect(decodeMemoText(hex)).toBe("hi");
   });
+
+  it("returns null for invalid UTF-8 sequences (non-control high bytes)", () => {
+    // 0xC0 0x20 is invalid UTF-8: 0xC0 starts a 2-byte sequence but 0x20 is not a continuation byte.
+    // Both bytes pass hasNoControlChars (>= 0x20), so this exercises the catch in tryDecodeUtf8.
+    const hex = ("0x" + "c020" + "41".repeat(30)) as `0x${string}`;
+    expect(decodeMemoText(hex)).toBeNull();
+  });
+
+  it("returns null for truncated multi-byte UTF-8 at end of content", () => {
+    // 0xE0 starts a 3-byte UTF-8 sequence but is followed by zeros (stripped as padding)
+    const hex = ("0x" + "e0" + "00".repeat(31)) as `0x${string}`;
+    expect(decodeMemoText(hex)).toBeNull();
+  });
+
+  it("returns null for invalid hex characters", () => {
+    const hex = ("0x" + "zz" + "41".repeat(31)) as `0x${string}`;
+    expect(decodeMemoText(hex)).toBeNull();
+  });
+
+  it("returns null for bytes with control char 0x01", () => {
+    // 0x01 is a control char (< 0x09), should be rejected
+    const hex = ("0x" + "01" + "41".repeat(31)) as `0x${string}`;
+    expect(decodeMemoText(hex)).toBeNull();
+  });
+
+  it("returns null for bytes with control char 0x0b (VT)", () => {
+    const hex = ("0x" + "0b" + "41".repeat(31)) as `0x${string}`;
+    expect(decodeMemoText(hex)).toBeNull();
+  });
+
+  it("returns null for bytes with control char 0x0c (FF)", () => {
+    const hex = ("0x" + "0c" + "41".repeat(31)) as `0x${string}`;
+    expect(decodeMemoText(hex)).toBeNull();
+  });
+
+  it("returns null for bytes with control char 0x0e", () => {
+    const hex = ("0x" + "0e" + "41".repeat(31)) as `0x${string}`;
+    expect(decodeMemoText(hex)).toBeNull();
+  });
+
+  it("returns null for bytes with control char 0x1f", () => {
+    const hex = ("0x" + "1f" + "41".repeat(31)) as `0x${string}`;
+    expect(decodeMemoText(hex)).toBeNull();
+  });
+
+  it("returns null for bytes with DEL char 0x7f", () => {
+    const hex = ("0x" + "7f" + "41".repeat(31)) as `0x${string}`;
+    expect(decodeMemoText(hex)).toBeNull();
+  });
 });
 
 describe("decodeMemo", () => {

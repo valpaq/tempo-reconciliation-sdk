@@ -65,6 +65,9 @@ export async function sendWebhook(options: WebhookOptions): Promise<WebhookResul
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(`Invalid webhook URL protocol: ${parsed.protocol}`);
   }
+  if (batchSize < 1) {
+    throw new Error("batchSize must be >= 1");
+  }
 
   const fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
   let sent = 0;
@@ -99,7 +102,9 @@ function isRetryable(status: number): boolean {
 }
 
 /** Serialize a batch of MatchResults into the webhook JSON body + idempotency key. */
-async function serializeBatch(events: MatchResult[]): Promise<{ body: string; idempotencyKey: string; timestamp: number }> {
+async function serializeBatch(
+  events: MatchResult[],
+): Promise<{ body: string; idempotencyKey: string; timestamp: number }> {
   const timestamp = Math.floor(Date.now() / 1000);
   const fingerprint = events.map((e) => `${e.payment.txHash}:${e.payment.logIndex}`).join("|");
   const fingerprintBytes = new TextEncoder().encode(fingerprint);

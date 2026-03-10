@@ -1,4 +1,4 @@
-use alloy::primitives::FixedBytes;
+use alloy_primitives::FixedBytes;
 use tempo_reconcile_nonces::types::{NonceMode, SlotState};
 use tempo_reconcile_nonces::NoncePool;
 

@@ -8,7 +8,7 @@ import type {
   ReconcilerOptions,
   ReconcileStore,
 } from "../types";
-import { decodeMemoV1, isMemoV1 } from "../memo/decode";
+import { decodeMemoV1 } from "../memo/decode";
 import { InMemoryStore } from "./store";
 
 /** Basis points divisor used for tolerance ceiling-division. */
@@ -56,7 +56,11 @@ export class Reconciler {
     this.toleranceBps = options?.amountToleranceBps ?? 0;
     this.partialToleranceMode = options?.partialToleranceMode ?? "final";
 
-    if (!Number.isInteger(this.toleranceBps) || this.toleranceBps < 0 || this.toleranceBps > 10000) {
+    if (
+      !Number.isInteger(this.toleranceBps) ||
+      this.toleranceBps < 0 ||
+      this.toleranceBps > 10000
+    ) {
       throw new Error("amountToleranceBps must be an integer between 0 and 10000");
     }
   }
@@ -109,7 +113,7 @@ export class Reconciler {
 
     const decoded = decodeMemoV1(event.memoRaw);
 
-    if (this.issuerTag !== undefined && decoded && isMemoV1(decoded) && decoded.issuerTag !== this.issuerTag) {
+    if (this.issuerTag !== undefined && decoded && decoded.issuerTag !== this.issuerTag) {
       return this.record(eventKey, {
         status: "unknown_memo",
         payment: event,
@@ -330,6 +334,8 @@ export class Reconciler {
     if (cumulative >= matchThreshold) {
       const over = cumulative - expected.amount;
       if (over > 0n && !this.allowOverpayment) {
+        this.store.removePartial(memoRaw);
+        this.store.removeExpected(memoRaw);
         return this.record(eventKey, {
           status: "mismatch_amount",
           payment: event,

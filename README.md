@@ -19,7 +19,8 @@ Does not overlap with the official Tempo SDK (no wallet, no signing, no sponsore
 
 ## Requirements
 
-Node.js >= 20.0.0 (for native `fetch`). The `sendWebhook` and `createExplorerClient` functions accept an optional `fetch` parameter for environments without global `fetch`.
+- Node.js >= 20.0.0 (for native `fetch`). The `sendWebhook` and `createExplorerClient` functions accept an optional `fetch` parameter for environments without global `fetch`.
+- Rust >= 1.85 (MSRV for the Rust crate)
 
 ## Install
 

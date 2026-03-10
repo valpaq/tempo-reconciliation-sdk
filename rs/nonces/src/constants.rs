@@ -1,4 +1,4 @@
-use alloy::primitives::{address, Address, U256};
+use alloy_primitives::{address, Address, U256};
 
 /// INonce precompile address on Tempo (ASCII "NONCE" zero-padded to 20 bytes).
 pub const NONCE_PRECOMPILE: Address = address!("4e4F4E4345000000000000000000000000000000");

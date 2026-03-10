@@ -2,17 +2,22 @@
 name = "tempo-reconcile-nonces"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.84"
+rust-version = "1.91"
 license = "MIT"
 description = "Nonce pool for Tempo's 2D nonce system (TIP-1009)"
 keywords = ["tempo", "blockchain", "nonce", "tip1009"]
 categories = ["cryptography::cryptocurrencies"]
 repository = "https://github.com/valpaq/tempo-reconciliation-sdk"
 
+[features]
+default = ["rpc"]
+rpc = ["dep:alloy", "dep:futures"]
+
 [dependencies]
-alloy = { version = "1", features = ["providers", "contract", "sol-types", "transports"] }
+alloy-primitives = "1"
+alloy = { version = "1", optional = true, features = ["providers", "contract", "sol-types", "transports"] }
 thiserror = "2"
-futures = "0.3"
+futures = { version = "0.3", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
