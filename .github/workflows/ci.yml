@@ -47,7 +47,7 @@ jobs:
         run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           files: rs/lcov.info
           flags: rust
@@ -220,14 +220,14 @@ jobs:
 
       - name: Upload coverage (sdk)
         if: matrix.node-version == 20
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           directory: ts/packages/sdk/coverage
           flags: sdk
 
       - name: Upload coverage (nonces)
         if: matrix.node-version == 20
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           directory: ts/packages/nonces/coverage
           flags: nonces
